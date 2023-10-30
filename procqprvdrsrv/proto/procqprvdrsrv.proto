@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+import "proc/proc.proto";
+
+option go_package = "sigmaos/procqprvdrsrv/proto";
+
+service ProcQPrvdr {
+  rpc Enqueue(EnqueueRequest) returns (EnqueueResponse);
+  rpc GetProc(GetProcRequest) returns (GetProcResponse);
+}
+
+message EnqueueRequest {
+  ProcProto procProto = 1;
+}
+
+message EnqueueResponse {
+  string kernelID = 1;
+}
+
+message GetProcRequest {
+  string kernelID = 1;
+  uint32 providerInt = 2;
+}
+
+message GetProcResponse {
+  bool oK = 1;
+}
