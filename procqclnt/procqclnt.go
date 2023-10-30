@@ -7,6 +7,7 @@ import (
 	db "sigmaos/debug"
 	"sigmaos/fslib"
 	"sigmaos/proc"
+	pqprvdrsrvproto "sigmaos/procqprvdrsrv/proto"
 	"sigmaos/procqsrv/proto"
 	"sigmaos/serr"
 	sp "sigmaos/sigmap"
@@ -106,5 +107,40 @@ func (pqc *ProcQClnt) GetProc(callerKernelID string, freeMem proc.Tmem, bias boo
 		}
 		db.DPrintf(db.PROCQCLNT, "GetProc success? %v", res.OK)
 		return proc.Tmem(res.Mem), res.QLen, res.OK, nil
+	}
+}
+
+// GetProc but gets a proc labeled with the given provider.
+func (pqc *ProcQClnt) GetProcPrvdr(callerKernelID string, provider proc.Tprovider) (bool, error) {
+	pqc.urpcc.UpdateSrvs(false)
+	// Retry until successful.
+	for {
+		pqID, err := pqc.urpcc.NextSrv()
+		if err != nil {
+			pqc.urpcc.UpdateSrvs(true)
+			db.DPrintf(db.PROCQCLNT_ERR, "No procQs available: %v", err)
+			continue
+		}
+		rpcc, err := pqc.urpcc.GetClnt(pqID)
+		if err != nil {
+			db.DPrintf(db.PROCQCLNT_ERR, "Error: Can't get procq clnt: %v", err)
+			return false, err
+		}
+		req := &pqprvdrsrvproto.GetProcRequest{
+			KernelID:    callerKernelID,
+			ProviderInt: uint32(provider),
+		}
+		res := &pqprvdrsrvproto.GetProcResponse{}
+		if err := rpcc.RPC("ProcQPrvdr.GetProc", req, res); err != nil {
+			db.DPrintf(db.ALWAYS, "ProcQPrvdr.GetProc %v provider %v err %v", callerKernelID, provider, err)
+			if serr.IsErrCode(err, serr.TErrUnreachable) {
+				db.DPrintf(db.ALWAYS, "Force lookup %v", pqID)
+				pqc.urpcc.UnregisterSrv(pqID)
+				continue
+			}
+			return false, err
+		}
+		db.DPrintf(db.PROCQCLNT, "GetProc success? %v", res.OK)
+		return res.OK, nil
 	}
 }
