@@ -30,17 +30,19 @@ type Schedd struct {
 	procqclnt  *procqclnt.ProcQClnt
 	mcpufree   proc.Tmcpu
 	memfree    proc.Tmem
+	provider   proc.Tprovider
 	kernelId   string
 	realms     []sp.Trealm
 	mfs        *memfssrv.MemFs
 }
 
-func NewSchedd(mfs *memfssrv.MemFs, kernelId string, reserveMcpu uint) *Schedd {
+func NewSchedd(mfs *memfssrv.MemFs, kernelId string, provider uint, reserveMcpu uint) *Schedd {
 	sd := &Schedd{
 		pmgr:     procmgr.NewProcMgr(mfs, kernelId),
 		realms:   make([]sp.Trealm, 0),
 		mcpufree: proc.Tmcpu(1000*linuxsched.GetNCores() - reserveMcpu),
 		memfree:  mem.GetTotalMem(),
+		provider: proc.Tprovider(provider), // TODO
 		kernelId: kernelId,
 		mfs:      mfs,
 	}
@@ -195,13 +197,13 @@ func (sd *Schedd) register() {
 	}
 }
 
-func RunSchedd(kernelId string, reserveMcpu uint) error {
+func RunSchedd(kernelId string, provider uint, reserveMcpu uint) error {
 	pcfg := proc.GetProcEnv()
 	mfs, err := memfssrv.NewMemFs(path.Join(sp.SCHEDD, kernelId), pcfg)
 	if err != nil {
 		db.DFatalf("Error NewMemFs: %v", err)
 	}
-	sd := NewSchedd(mfs, kernelId, reserveMcpu)
+	sd := NewSchedd(mfs, kernelId, provider, reserveMcpu)
 	ssrv, err := sigmasrv.NewSigmaSrvMemFs(mfs, sd)
 	if err != nil {
 		db.DFatalf("Error PDS: %v", err)
