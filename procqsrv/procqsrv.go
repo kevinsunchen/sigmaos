@@ -144,9 +144,10 @@ func (pq *ProcQ) tryGetRealmQueueL(realm sp.Trealm) (*Queue, bool) {
 }
 
 // Run a ProcQ
-func Run() {
+func Run(prvdr sp.Tprovider) {
 	pcfg := proc.GetProcEnv()
-	mfs, err := memfssrv.NewMemFs(path.Join(sp.PROCQ, pcfg.GetPID().String()), pcfg)
+	// TODO_PRVDR perhaps make new provider type independent of proc.go
+	mfs, err := memfssrv.NewMemFs(path.Join(sp.PROCQ, prvdr.TproviderToDir(), pcfg.GetPID().String()), pcfg)
 	if err != nil {
 		db.DFatalf("Error NewMemFs: %v", err)
 	}

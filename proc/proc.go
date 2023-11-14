@@ -14,20 +14,13 @@ import (
 	sp "sigmaos/sigmap"
 )
 
-type Ttype uint32     // If this type changes, make sure to change the typecasts below.
-type Tmcpu uint32     // If this type changes, make sure to change the typecasts below.
-type Tmem uint32      // If this type changes, make sure to change the typecasts below.
-type Tprovider uint32 // If this type changes, make sure to change the typecasts below.
+type Ttype uint32 // If this type changes, make sure to change the typecasts below.
+type Tmcpu uint32 // If this type changes, make sure to change the typecasts below.
+type Tmem uint32  // If this type changes, make sure to change the typecasts below.
 
 const (
 	T_BE Ttype = 0
 	T_LC Ttype = 1
-)
-
-const (
-	T_ANY      Tprovider = 0
-	T_AWS      Tprovider = 1
-	T_CLOUDLAB Tprovider = 2
 )
 
 func (t Ttype) String() string {
@@ -50,34 +43,6 @@ func ParseTtype(tstr string) Ttype {
 		return T_LC
 	default:
 		log.Fatalf("Unknown proc type: %v", tstr)
-	}
-	return 0
-}
-
-func (t Tprovider) String() string {
-	switch t {
-	case T_ANY:
-		return "T_ANY"
-	case T_AWS:
-		return "T_AWS"
-	case T_CLOUDLAB:
-		return "T_CLOUDLAB"
-	default:
-		log.Fatalf("Unknown provider: %v", t)
-	}
-	return ""
-}
-
-func ParseTprovider(tstr string) Tprovider {
-	switch tstr {
-	case "T_ANY":
-		return T_ANY
-	case "T_AWS":
-		return T_AWS
-	case "T_CLOUDLAB":
-		return T_CLOUDLAB
-	default:
-		log.Fatalf("Unknown provider: %v", tstr)
 	}
 	return 0
 }
@@ -109,7 +74,7 @@ func NewPrivProcPid(pid sp.Tpid, program string, args []string, priv bool) *Proc
 	p.Args = args
 	p.TypeInt = uint32(T_BE)
 	p.McpuInt = uint32(0)
-	p.ProviderInt = uint32(T_ANY)
+	p.ProviderInt = uint32(sp.DEFAULT_PRVDR)
 	if p.ProcEnvProto.Privileged {
 		p.TypeInt = uint32(T_LC)
 	}
@@ -331,12 +296,12 @@ func (p *Proc) SetMem(mb Tmem) {
 	p.MemInt = uint32(mb)
 }
 
-func (p *Proc) GetProvider() Tprovider {
-	return Tprovider(p.ProcProto.ProviderInt)
+func (p *Proc) GetProvider() sp.Tprovider {
+	return sp.Tprovider(p.ProcProto.ProviderInt)
 }
 
-func (p *Proc) SetProvider(provider Tprovider) {
-	if provider >= Tprovider(0) && provider <= Tprovider(2) {
+func (p *Proc) SetProvider(provider sp.Tprovider) {
+	if provider >= sp.Tprovider(0) && provider <= sp.Tprovider(2) {
 		p.ProviderInt = uint32(provider)
 	} else {
 		log.Fatalf("Error! Invalid provider: %v", provider)

@@ -5,7 +5,7 @@
 #
 
 usage() {
-    echo "Usage: $0 [--pull TAG] [--boot all|node|named|realm] [--named ADDRs] [--dbip DBIP] [--mongoip MONGOIP] [--host] [--overlays] [--reserveMcpu rmcpu] kernelid"  1>&2
+    echo "Usage: $0 [--pull TAG] [--boot all|node|lcschednode|named|realm] [--named ADDRs] [--dbip DBIP] [--mongoip MONGOIP] [--host] [--overlays] [--provider PROVIDER] [--reserveMcpu rmcpu] kernelid"  1>&2
 }
 
 UPDATE=""
@@ -17,6 +17,7 @@ MONGOIP="x.x.x.x"
 NET="host"
 KERNELID=""
 OVERLAYS="false"
+PROVIDER="aws"
 RMCPU="0"
 while [[ "$#" -gt 1 ]]; do
   case "$1" in
@@ -28,6 +29,9 @@ while [[ "$#" -gt 1 ]]; do
             ;;
         "node")
             BOOT="procq;schedd;ux;s3;db;mongo"
+            ;;
+        "lcschednode")
+            BOOT="procq;lcsched;schedd;ux;s3;db;mongo"
             ;;
         "named")
             BOOT="knamed"
@@ -69,6 +73,11 @@ while [[ "$#" -gt 1 ]]; do
   --mongoip)
     shift
     MONGOIP=$1
+    shift
+    ;;
+  --provider)
+    shift
+    PROVIDER=$1
     shift
     ;;
   --reserveMcpu)
@@ -138,6 +147,7 @@ CID=$(docker run -dit\
              -e overlays=${OVERLAYS}\
              -e SIGMAPERF=${SIGMAPERF}\
              -e SIGMANAMED=${SIGMANAMED}\
+             -e provider=${PROVIDER}\
              -e reserveMcpu=${RMCPU}\
              sigmaos)
 

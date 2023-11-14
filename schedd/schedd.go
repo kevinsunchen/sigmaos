@@ -30,25 +30,25 @@ type Schedd struct {
 	procqclnt  *procqclnt.ProcQClnt
 	mcpufree   proc.Tmcpu
 	memfree    proc.Tmem
-	provider   proc.Tprovider
+	provider   sp.Tprovider
 	kernelId   string
 	realms     []sp.Trealm
 	mfs        *memfssrv.MemFs
 }
 
-func NewSchedd(mfs *memfssrv.MemFs, kernelId string, provider uint, reserveMcpu uint) *Schedd {
+func NewSchedd(mfs *memfssrv.MemFs, kernelId string, provider sp.Tprovider, reserveMcpu uint) *Schedd {
 	sd := &Schedd{
 		pmgr:     procmgr.NewProcMgr(mfs, kernelId),
 		realms:   make([]sp.Trealm, 0),
 		mcpufree: proc.Tmcpu(1000*linuxsched.GetNCores() - reserveMcpu),
 		memfree:  mem.GetTotalMem(),
-		provider: proc.Tprovider(provider), // TODO
+		provider: provider,
 		kernelId: kernelId,
 		mfs:      mfs,
 	}
 	sd.cond = sync.NewCond(&sd.mu)
 	sd.scheddclnt = scheddclnt.NewScheddClnt(mfs.SigmaClnt().FsLib)
-	sd.procqclnt = procqclnt.NewProcQClnt(mfs.SigmaClnt().FsLib)
+	sd.procqclnt = procqclnt.NewProcQClnt(mfs.SigmaClnt().FsLib, sd.provider) // creates provider-specific ProcQClnt
 	return sd
 }
 
@@ -133,9 +133,8 @@ func (sd *Schedd) getQueuedProcs() {
 		if sd.shouldGetProc() {
 		}
 		db.DPrintf(db.SCHEDD, "[%v] Try get proc from procq", sd.kernelId)
-		// Try to get a proc from the proc queue.
-		// TODO: switching this to GetProcPrvdr for now
-		ok, err := sd.procqclnt.GetProcPrvdr(sd.kernelId, sd.provider)
+		// Try to get a proc from the (provider-specific) proc queue.
+		ok, err := sd.procqclnt.GetProc(sd.kernelId)
 		if err != nil {
 			db.DPrintf(db.SCHEDD_ERR, "Error GetProc: %v", err)
 			continue
@@ -183,7 +182,7 @@ func (sd *Schedd) shouldGetProc() bool {
 }
 
 func (sd *Schedd) register() {
-	rpcc, err := rpcclnt.NewRPCClnt([]*fslib.FsLib{sd.mfs.SigmaClnt().FsLib}, path.Join(sp.LCSCHED, "~any"))
+	rpcc, err := rpcclnt.NewRPCClnt([]*fslib.FsLib{sd.mfs.SigmaClnt().FsLib}, path.Join(sp.LCSCHED, sd.provider.String(), "~any"))
 	if err != nil {
 		db.DFatalf("Error lsched rpccc: %v", err)
 	}
@@ -198,7 +197,7 @@ func (sd *Schedd) register() {
 	}
 }
 
-func RunSchedd(kernelId string, provider uint, reserveMcpu uint) error {
+func RunSchedd(kernelId string, provider sp.Tprovider, reserveMcpu uint) error {
 	pcfg := proc.GetProcEnv()
 	mfs, err := memfssrv.NewMemFs(path.Join(sp.SCHEDD, kernelId), pcfg)
 	if err != nil {

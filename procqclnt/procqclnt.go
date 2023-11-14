@@ -2,12 +2,12 @@ package procqclnt
 
 import (
 	"errors"
+	"path"
 	"time"
 
 	db "sigmaos/debug"
 	"sigmaos/fslib"
 	"sigmaos/proc"
-	pqprvdrsrvproto "sigmaos/procqprvdrsrv/proto"
 	"sigmaos/procqsrv/proto"
 	"sigmaos/serr"
 	sp "sigmaos/sigmap"
@@ -23,10 +23,12 @@ type ProcQClnt struct {
 	urpcc *unionrpcclnt.UnionRPCClnt
 }
 
-func NewProcQClnt(fsl *fslib.FsLib) *ProcQClnt {
+func NewProcQClnt(fsl *fslib.FsLib, prvdr sp.Tprovider) *ProcQClnt {
+	// TODO_PRVDR perhaps make new provider type independent of proc.go
+	pn := path.Join(sp.PROCQ, prvdr.TproviderToDir())
 	return &ProcQClnt{
 		FsLib: fsl,
-		urpcc: unionrpcclnt.NewUnionRPCClnt(fsl, sp.PROCQ, db.PROCQCLNT, db.PROCQCLNT_ERR),
+		urpcc: unionrpcclnt.NewUnionRPCClnt(fsl, pn, db.PROCQCLNT, db.PROCQCLNT_ERR),
 	}
 }
 
@@ -67,42 +69,6 @@ func (pqc *ProcQClnt) Enqueue(p *proc.Proc) (string, error) {
 	return res.KernelID, nil
 }
 
-// Enqueue, but enqueues the proc to the provider-aware ProcQPrvdrSrv scheduler.
-func (pqc *ProcQClnt) EnqueuePrvdr(p *proc.Proc) (string, error) {
-	s := time.Now()
-	pqc.urpcc.UpdateSrvs(false)
-	db.DPrintf(db.SPAWN_LAT, "[%v] ProcQClnt updateProcQs %v", p.GetPid(), time.Since(s))
-	s = time.Now()
-	pqID, err := pqc.urpcc.NextSrv()
-	if err != nil {
-		return NOT_ENQ, errors.New("No procqs available")
-	}
-	db.DPrintf(db.SPAWN_LAT, "[%v] ProcQClnt get ProcQ %v", p.GetPid(), time.Since(s))
-	s = time.Now()
-	rpcc, err := pqc.urpcc.GetClnt(pqID)
-	if err != nil {
-		db.DFatalf("Error: Can't get procq clnt: %v", err)
-		return NOT_ENQ, err
-	}
-	db.DPrintf(db.SPAWN_LAT, "[%v] ProcQClnt make clnt %v", p.GetPid(), time.Since(s))
-	req := &pqprvdrsrvproto.EnqueueRequest{
-		ProcProto: p.GetProto(),
-	}
-	res := &pqprvdrsrvproto.EnqueueResponse{}
-	s = time.Now()
-	if err := rpcc.RPC("ProcQPrvdr.Enqueue", req, res); err != nil {
-		db.DPrintf(db.ALWAYS, "ProcQPrvdr.Enqueue err %v", err)
-		if serr.IsErrCode(err, serr.TErrUnreachable) {
-			db.DPrintf(db.ALWAYS, "Force lookup %v", pqID)
-			pqc.urpcc.UnregisterSrv(pqID)
-		}
-		return NOT_ENQ, err
-	}
-	db.DPrintf(db.PROCQCLNT, "[%v] Enqueued Proc %v", p.GetRealm(), p)
-	db.DPrintf(db.SPAWN_LAT, "[%v] ProcQClnt client-side RPC latency %v", p.GetPid(), time.Since(s))
-	return res.KernelID, nil
-}
-
 // Get a proc (passing in the kernelID of the caller). Will only return once
 // successful, or once there is an error.
 func (pqc *ProcQClnt) GetProc(callerKernelID string) (bool, error) {
@@ -126,41 +92,6 @@ func (pqc *ProcQClnt) GetProc(callerKernelID string) (bool, error) {
 		res := &proto.GetProcResponse{}
 		if err := rpcc.RPC("ProcQ.GetProc", req, res); err != nil {
 			db.DPrintf(db.ALWAYS, "ProcQ.GetProc %v err %v", callerKernelID, err)
-			if serr.IsErrCode(err, serr.TErrUnreachable) {
-				db.DPrintf(db.ALWAYS, "Force lookup %v", pqID)
-				pqc.urpcc.UnregisterSrv(pqID)
-				continue
-			}
-			return false, err
-		}
-		db.DPrintf(db.PROCQCLNT, "GetProc success? %v", res.OK)
-		return res.OK, nil
-	}
-}
-
-// GetProc, but gets a proc labeled with the given provider.
-func (pqc *ProcQClnt) GetProcPrvdr(callerKernelID string, provider proc.Tprovider) (bool, error) {
-	pqc.urpcc.UpdateSrvs(false)
-	// Retry until successful.
-	for {
-		pqID, err := pqc.urpcc.NextSrv()
-		if err != nil {
-			pqc.urpcc.UpdateSrvs(true)
-			db.DPrintf(db.PROCQCLNT_ERR, "No procQs available: %v", err)
-			continue
-		}
-		rpcc, err := pqc.urpcc.GetClnt(pqID)
-		if err != nil {
-			db.DPrintf(db.PROCQCLNT_ERR, "Error: Can't get procq clnt: %v", err)
-			return false, err
-		}
-		req := &pqprvdrsrvproto.GetProcRequest{
-			KernelID:    callerKernelID,
-			ProviderInt: uint32(provider),
-		}
-		res := &pqprvdrsrvproto.GetProcResponse{}
-		if err := rpcc.RPC("ProcQPrvdr.GetProc", req, res); err != nil {
-			db.DPrintf(db.ALWAYS, "ProcQPrvdr.GetProc %v provider %v err %v", callerKernelID, provider, err)
 			if serr.IsErrCode(err, serr.TErrUnreachable) {
 				db.DPrintf(db.ALWAYS, "Force lookup %v", pqID)
 				pqc.urpcc.UnregisterSrv(pqID)
