@@ -181,9 +181,9 @@ func (lcs *LCSched) addRealmQueueL(realm sp.Trealm) *Queue {
 }
 
 // Run an LCSched
-func Run() {
+func Run(prvdr sp.Tprovider) {
 	pcfg := proc.GetProcEnv()
-	mfs, err := memfssrv.NewMemFs(path.Join(sp.LCSCHED, pcfg.GetPID().String()), pcfg)
+	mfs, err := memfssrv.NewMemFs(path.Join(sp.LCSCHED, prvdr.TproviderToDir(), pcfg.GetPID().String()), pcfg)
 
 	if err != nil {
 		db.DFatalf("Error NewMemFs: %v", err)

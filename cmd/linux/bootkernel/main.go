@@ -28,9 +28,10 @@ func main() {
 		Dbip:     os.Args[4],
 		Mongoip:  os.Args[5],
 		Overlays: overlays,
+		Provider: os.Args[7],
 	}
-	if len(os.Args) >= 8 {
-		param.ReserveMcpu = os.Args[7]
+	if len(os.Args) >= 9 {
+		param.ReserveMcpu = os.Args[8]
 	}
 	db.DPrintf(db.KERNEL, "param %v\n", param)
 	h := sp.SIGMAHOME

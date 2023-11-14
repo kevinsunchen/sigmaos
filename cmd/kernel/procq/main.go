@@ -5,11 +5,14 @@ import (
 
 	db "sigmaos/debug"
 	"sigmaos/procqsrv"
+	sp "sigmaos/sigmap"
 )
 
 func main() {
-	if len(os.Args) != 1 {
-		db.DFatalf("Usage: %v", os.Args[0])
+	if len(os.Args) != 2 {
+		db.DFatalf("Usage: provider %v", os.Args[0])
 	}
-	procqsrv.Run()
+	// TODO_PRVDR use actual OS args
+	provider := sp.ParseTprovider(os.Args[1])
+	procqsrv.Run(provider)
 }

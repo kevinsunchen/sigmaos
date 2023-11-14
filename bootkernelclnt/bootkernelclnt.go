@@ -21,6 +21,10 @@ const (
 )
 
 func Start(kernelId string, pcfg *proc.ProcEnv, srvs string, overlays bool) (string, error) {
+	return StartWithProvider(kernelId, pcfg, srvs, overlays, sp.DEFAULT_PRVDR)
+}
+
+func StartWithProvider(kernelId string, pcfg *proc.ProcEnv, srvs string, overlays bool, provider sp.Tprovider) (string, error) {
 	args := []string{
 		"--pull", pcfg.BuildTag,
 		"--boot", srvs,
@@ -30,6 +34,8 @@ func Start(kernelId string, pcfg *proc.ProcEnv, srvs string, overlays bool) (str
 	if overlays {
 		args = append(args, "--overlays")
 	}
+	prvdrArg := []string{"--provider", provider.String()}
+	args = append(args, prvdrArg...)
 	args = append(args, kernelId)
 	out, err := exec.Command(START, args...).Output()
 	if err != nil {
@@ -37,7 +43,7 @@ func Start(kernelId string, pcfg *proc.ProcEnv, srvs string, overlays bool) (str
 		return "", err
 	}
 	ip := string(out)
-	db.DPrintf(db.BOOT, "Start: %v srvs %v IP %v\n", kernelId, srvs, ip)
+	db.DPrintf(db.BOOT, "Start: %v srvs %v IP %v provider %v\n", kernelId, srvs, ip, provider.String())
 	return ip, nil
 }
 
@@ -52,8 +58,12 @@ type Kernel struct {
 }
 
 func NewKernelClntStart(pcfg *proc.ProcEnv, conf string, overlays bool) (*Kernel, error) {
+	return NewKernelClntStartWithProvider(pcfg, conf, overlays, sp.DEFAULT_PRVDR)
+}
+
+func NewKernelClntStartWithProvider(pcfg *proc.ProcEnv, conf string, overlays bool, provider sp.Tprovider) (*Kernel, error) {
 	kernelId := GenKernelId()
-	_, err := Start(kernelId, pcfg, conf, overlays)
+	_, err := StartWithProvider(kernelId, pcfg, conf, overlays, provider)
 	if err != nil {
 		return nil, err
 	}

@@ -250,9 +250,10 @@ func (pq *ProcQ) stats() {
 }
 
 // Run a ProcQ
-func Run() {
+func Run(prvdr sp.Tprovider) {
 	pcfg := proc.GetProcEnv()
-	mfs, err := memfssrv.NewMemFs(path.Join(sp.PROCQ, pcfg.GetKernelID()), pcfg)
+	// TODO_PRVDR perhaps make new provider type independent of proc.go
+	mfs, err := memfssrv.NewMemFs(path.Join(sp.PROCQ, prvdr.TproviderToDir(), pcfg.GetKernelID()), pcfg)
 	if err != nil {
 		db.DFatalf("Error NewMemFs: %v", err)
 	}

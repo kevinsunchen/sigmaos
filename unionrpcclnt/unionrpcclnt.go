@@ -83,6 +83,8 @@ func (urpcc *UnionRPCClnt) UpdateSrvs(force bool) {
 	if err != nil {
 		db.DPrintf(db.ALWAYS, "Error ReadDir procd: %v", err)
 		return
+	} else {
+		db.DPrintf(db.ALWAYS, "ReadDir procd success. path: %v. srvs: %v", urpcc.path, srvs)
 	}
 	urpcc.updateSrvsL(srvs)
 }

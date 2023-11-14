@@ -39,6 +39,7 @@ type Param struct {
 	Dbip        string
 	Mongoip     string
 	Overlays    bool
+	Provider    string
 	ReserveMcpu string
 }
 

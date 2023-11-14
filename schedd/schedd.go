@@ -33,7 +33,7 @@ type Schedd struct {
 	procqclnt           *procqclnt.ProcQClnt
 	mcpufree            proc.Tmcpu
 	memfree             proc.Tmem
-	provider            proc.Tprovider
+	provider            sp.Tprovider
 	kernelId            string
 	scheddStats         map[sp.Trealm]*proto.RealmStats
 	mfs                 *memfssrv.MemFs
@@ -42,19 +42,19 @@ type Schedd struct {
 	nProcGetsSuccessful uint64
 }
 
-func NewSchedd(mfs *memfssrv.MemFs, kernelId string, provider uint, reserveMcpu uint) *Schedd {
+func NewSchedd(mfs *memfssrv.MemFs, kernelId string, provider sp.Tprovider, reserveMcpu uint) *Schedd {
 	sd := &Schedd{
 		pmgr:        procmgr.NewProcMgr(mfs, kernelId),
 		scheddStats: make(map[sp.Trealm]*proto.RealmStats),
 		mcpufree:    proc.Tmcpu(1000*linuxsched.GetNCores() - reserveMcpu),
 		memfree:     mem.GetTotalMem(),
-		provider:    proc.Tprovider(provider), // TODO
+		provider:    provider,
 		kernelId:    kernelId,
 		mfs:         mfs,
 	}
 	sd.cond = sync.NewCond(&sd.mu)
 	sd.scheddclnt = scheddclnt.NewScheddClnt(mfs.SigmaClnt().FsLib)
-	sd.procqclnt = procqclnt.NewProcQClnt(mfs.SigmaClnt().FsLib)
+	sd.procqclnt = procqclnt.NewProcQClnt(mfs.SigmaClnt().FsLib, sd.provider) // creates provider-specific ProcQClnt
 	return sd
 }
 
@@ -258,7 +258,7 @@ func (sd *Schedd) shouldGetProc() (proc.Tmem, bool) {
 }
 
 func (sd *Schedd) register() {
-	rpcc, err := rpcclnt.NewRPCClnt([]*fslib.FsLib{sd.mfs.SigmaClnt().FsLib}, path.Join(sp.LCSCHED, "~any"))
+	rpcc, err := rpcclnt.NewRPCClnt([]*fslib.FsLib{sd.mfs.SigmaClnt().FsLib}, path.Join(sp.LCSCHED, sd.provider.String(), "~any"))
 	if err != nil {
 		db.DFatalf("Error lsched rpccc: %v", err)
 	}
@@ -283,7 +283,7 @@ func (sd *Schedd) stats() {
 	}
 }
 
-func RunSchedd(kernelId string, reserveMcpu uint, provider uint) error {
+func RunSchedd(kernelId string, provider sp.Tprovider, reserveMcpu uint) error {
 	pcfg := proc.GetProcEnv()
 	mfs, err := memfssrv.NewMemFs(path.Join(sp.SCHEDD, kernelId), pcfg)
 	if err != nil {
