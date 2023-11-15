@@ -130,7 +130,7 @@ func (k *Kernel) bootUxd() (*Subsystem, error) {
 
 func (k *Kernel) bootS3d() (*Subsystem, error) {
 	// XXX Mount realm buckets dynamically.
-	return k.bootSubsystem("fss3d", []string{"arielck", "kaashoek", "fkaashoek", "yizhengh"}, proc.HSCHEDD)
+	return k.bootSubsystem("fss3d", []string{"arielck", "kaashoek", "fkaashoek", "yizhengh", "kschen-bucket1", "kschen-sigmaos"}, proc.HSCHEDD)
 }
 
 func (k *Kernel) bootDbd(hostip string) (*Subsystem, error) {
