@@ -46,7 +46,8 @@ def ls_instances(vpc):
     if vms == []:
         print("There is no instance in this VPC")
     else:
-        vms.sort(key=cmp)
+        # vms.sort(key=cmp)
+        vms.sort()
         for vm in vms:
             if args['privaddr']:
                 print("VMInstance", name(vm[3]), ":", vm[0], vm[1], vm[2])
