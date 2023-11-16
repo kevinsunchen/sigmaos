@@ -110,10 +110,10 @@ chmod a+w /tmp/sigmaos-perf
 
 # Pull latest docker images
 if ! [ -z "$TAG" ]; then
-  docker pull arielszekely/sigmaos:$TAG > /dev/null
-  docker tag arielszekely/sigmaos:$TAG sigmaos > /dev/null
-  docker pull arielszekely/sigmauser:$TAG > /dev/null
-  docker tag arielszekely/sigmauser:$TAG sigmauser > /dev/null
+  docker pull kevinsunchen/sigmaos:$TAG > /dev/null
+  docker tag kevinsunchen/sigmaos:$TAG sigmaos > /dev/null
+  docker pull kevinsunchen/sigmauser:$TAG > /dev/null
+  docker tag kevinsunchen/sigmauser:$TAG sigmauser > /dev/null
 fi
 
 if [ "$NAMED" == ":1111" ] && ! docker ps | grep -q etcd ; then
