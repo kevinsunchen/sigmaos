@@ -13,7 +13,7 @@ const (
 )
 
 const (
-	DEFAULT_PRVDR Tprovider = T_AWS
+	DEFAULT_PRVDR Tprovider = T_CLOUDLAB
 )
 
 func (t Tprovider) String() string {
