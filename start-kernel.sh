@@ -117,6 +117,7 @@ fi
 
 if [ "$NAMED" == ":1111" ] && ! docker ps | grep -q etcd ; then
   ./start-etcd.sh
+  NAMED="127.0.0.1"
 fi
 
 if [ "$DBIP" == "x.x.x.x" ] && docker ps | grep -q sigmadb; then
