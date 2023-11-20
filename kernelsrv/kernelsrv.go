@@ -82,7 +82,7 @@ func (ks *KernelSrv) AllocPort(ctx fs.CtxI, req proto.PortRequest, rep *proto.Po
 	if err != nil {
 		return err
 	}
-	ip, err := container.LocalIP()
+	ip, err := container.PublicIP()
 	if err != nil {
 		return err
 	}
