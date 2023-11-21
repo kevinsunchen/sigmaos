@@ -128,8 +128,10 @@ fi
 
 if ! [ -z "$TAG" ]; then
   echo "========== Pushing container images to DockerHub =========="
-  docker tag sigmaos arielszekely/sigmaos:$TAG
-  docker push arielszekely/sigmaos:$TAG
-  docker tag sigmauser arielszekely/sigmauser:$TAG
-  docker push arielszekely/sigmauser:$TAG
+  docker tag sigmaos kevinsunchen/sigmaos:$TAG
+  docker push kevinsunchen/sigmaos:$TAG
+  docker tag sigmauser kevinsunchen/sigmauser:$TAG
+  docker push kevinsunchen/sigmauser:$TAG
 fi
+
+
