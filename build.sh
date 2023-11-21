@@ -126,6 +126,14 @@ else
   echo "========== Done pushing user bins to aws =========="
 fi
 
+if ! [ -z "$TAG" ]; then
+  docker tag sigmaos kevinsunchen/sigmaos:$TAG
+  docker push kevinsunchen/sigmaos:$TAG
+  docker tag sigmauser kevinsunchen/sigmauser:$TAG
+  docker push kevinsunchen/sigmauser:$TAG
+fi
+
+
 exit 
 
 ## Default to building the sigmakernel image with user binaries
@@ -156,9 +164,3 @@ exit
 #  --target $SIGMAKERNEL_TARGET \
 #  -t sigmaos .
 
-if ! [ -z "$TAG" ]; then
-  docker tag sigmaos arielszekely/sigmaos:$TAG
-  docker push arielszekely/sigmaos:$TAG
-  docker tag sigmauser arielszekely/sigmauser:$TAG
-  docker push arielszekely/sigmauser:$TAG
-fi
