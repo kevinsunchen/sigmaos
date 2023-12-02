@@ -11,13 +11,13 @@ usage() {
 UPDATE=""
 TAG=""
 BOOT="named"
-NAMED=":1111"
+NAMED="127.0.0.1"
 DBIP="x.x.x.x"
 MONGOIP="x.x.x.x"
 NET="host"
 KERNELID=""
 OVERLAYS="false"
-PROVIDER="aws"
+PROVIDER="cloudlab"
 RMCPU="0"
 while [[ "$#" -gt 1 ]]; do
   case "$1" in
