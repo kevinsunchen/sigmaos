@@ -62,7 +62,6 @@ func TestExerciseProc(t *testing.T) {
 	ts := test.NewTstateAll(t)
 
 	p := proc.NewProc("example", []string{})
-	p.SetProvider(sp.T_AWS)
 	err := ts.Spawn(p)
 	assert.Nil(t, err)
 	err = ts.WaitStart(p.GetPid())
