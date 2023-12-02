@@ -3,9 +3,10 @@ package fsux
 import (
 	"sync"
 
-	"sigmaos/proc"
-	"sigmaos/container"
 	db "sigmaos/debug"
+	"sigmaos/netsigma"
+	"sigmaos/perf"
+	"sigmaos/proc"
 	"sigmaos/sigmaclnt"
 	sp "sigmaos/sigmap"
 	"sigmaos/sigmasrv"
@@ -24,7 +25,7 @@ type FsUx struct {
 }
 
 func RunFsUx(rootux string) {
-	ip, err := container.LocalIP()
+	ip, err := netsigma.LocalIP()
 	if err != nil {
 		db.DFatalf("LocalIP %v %v\n", sp.UX, err)
 	}
@@ -40,6 +41,14 @@ func RunFsUx(rootux string) {
 		db.DFatalf("BootSrvAndPost %v\n", err)
 	}
 	fsux.SigmaSrv = srv
+
+	// Perf monitoring
+	p, err := perf.NewPerf(pcfg, perf.UX)
+	if err != nil {
+		db.DFatalf("Error NewPerf: %v", err)
+	}
+	defer p.Done()
+
 	fsux.RunServer()
 }
 

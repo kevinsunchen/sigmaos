@@ -3,7 +3,6 @@ package mr
 import (
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -18,21 +17,13 @@ import (
 )
 
 const (
-	MR       = "/mr/"
-	MRDIRTOP = "name/" + MR
-
 	TIP  = "-tip/"
 	DONE = "-done/"
 	NEXT = "-next/"
 
 	NCOORD = 3
 
-	MLOCALSRV = sp.UX + "/~local" // must end without /
-	MLOCALDIR = MLOCALSRV + MR
-
 	RESTART = "restart" // restart message from reducer
-
-	MEM_REQ = 1000
 )
 
 //
@@ -62,11 +53,14 @@ type Coord struct {
 	mapperbin   string
 	reducerbin  string
 	leaderclnt  *leaderclnt.LeaderClnt
+	outdir      string
+	intOutdir   string
 	done        int32
+	memPerTask  proc.Tmem
 }
 
 func NewCoord(args []string) (*Coord, error) {
-	if len(args) != 7 {
+	if len(args) != 8 {
 		return nil, errors.New("NewCoord: wrong number of arguments")
 	}
 	c := &Coord{}
@@ -98,6 +92,24 @@ func NewCoord(args []string) (*Coord, error) {
 
 	c.linesz = args[6]
 
+	mem, err := strconv.Atoi(args[7])
+	if err != nil {
+		return nil, fmt.Errorf("NewCoord: nreducetask %v isn't int", args[2])
+	}
+	c.memPerTask = proc.Tmem(mem)
+
+	b, err := c.GetFile(JobOutLink(c.job))
+	if err != nil {
+		db.DFatalf("Error GetFile JobOutLink: %v", err)
+	}
+	c.outdir = string(b)
+
+	b, err = c.GetFile(JobIntOutLink(c.job))
+	if err != nil {
+		db.DFatalf("Error GetFile JobIntOutLink: %v", err)
+	}
+	c.intOutdir = string(b)
+
 	c.Started()
 
 	c.leaderclnt, err = leaderclnt.NewLeaderClnt(c.FsLib, JobDir(c.job)+"/coord-leader", 0)
@@ -111,7 +123,7 @@ func NewCoord(args []string) (*Coord, error) {
 }
 
 func (c *Coord) newTask(bin string, args []string, mb proc.Tmem) *proc.Proc {
-	pid := sp.GenPid(c.job)
+	pid := sp.GenPid(bin + "-" + c.job)
 	p := proc.NewProcPid(pid, bin, args)
 	//	if mb > 0 {
 	//		p.AppendEnv("GOMEMLIMIT", strconv.Itoa(int(mb)*1024*1024))
@@ -125,14 +137,14 @@ func (c *Coord) newTask(bin string, args []string, mb proc.Tmem) *proc.Proc {
 
 func (c *Coord) mapperProc(task string) *proc.Proc {
 	input := MapTask(c.job) + TIP + task
-	return c.newTask(c.mapperbin, []string{c.job, strconv.Itoa(c.nreducetask), input, c.linesz}, MEM_REQ)
+	return c.newTask(c.mapperbin, []string{c.job, strconv.Itoa(c.nreducetask), input, c.intOutdir, c.linesz}, c.memPerTask)
 }
 
 func (c *Coord) reducerProc(task string) *proc.Proc {
 	in := ReduceIn(c.job) + "/" + task
-	out := ReduceOut(c.job) + task
-	// TODO: set dynamically based on input file combined size.
-	return c.newTask(c.reducerbin, []string{in, out, strconv.Itoa(c.nmaptask)}, MEM_REQ)
+	outlink := ReduceOut(c.job) + task
+	outTarget := ReduceOutTarget(c.outdir, c.job) + task
+	return c.newTask(c.reducerbin, []string{in, outlink, outTarget, strconv.Itoa(c.nmaptask)}, c.memPerTask)
 }
 
 func (c *Coord) claimEntry(dir string, st *sp.Stat) (string, error) {
@@ -217,20 +229,16 @@ func (c *Coord) waitForTask(start time.Time, ch chan Tresult, dir string, p *pro
 }
 
 func (c *Coord) runTasks(ch chan Tresult, dir string, taskNames []string, f func(string) *proc.Proc) {
-	tasks := make([]*proc.Proc, len(taskNames))
-	// Make task proc structures.
-	for i, tn := range taskNames {
-		tasks[i] = f(tn)
-		db.DPrintf(db.MR, "prep to burst-spawn task %v %v\n", tasks[i].GetPid(), tasks[i].Args)
-	}
-	start := time.Now()
-	// Burst-spawn procs.
-	failed, errs := c.SpawnBurst(tasks, 1)
-	if len(failed) > 0 {
-		db.DFatalf("Couldn't burst-spawn some tasks %v, errs: %v", failed, errs)
-	}
-	for i := range tasks {
-		go c.waitForTask(start, ch, dir, tasks[i], taskNames[i])
+	db.DPrintf(db.MR, "runTasks %v", taskNames)
+	for _, tn := range taskNames {
+		t := f(tn)
+		db.DPrintf(db.MR, "prep to spawn task %v %v", t.GetPid(), t.Args)
+		start := time.Now()
+		err := c.Spawn(t)
+		if err != nil {
+			db.DFatalf("Err spawn task: %v", err)
+		}
+		go c.waitForTask(start, ch, dir, t, tn)
 	}
 }
 
@@ -254,7 +262,7 @@ func (c *Coord) startTasks(ch chan Tresult, dir string, f func(string) *proc.Pro
 		}
 		taskNames = append(taskNames, t)
 	}
-	go c.runTasks(ch, dir, taskNames, f)
+	c.runTasks(ch, dir, taskNames, f)
 	return len(taskNames)
 }
 
@@ -326,7 +334,9 @@ func (c *Coord) Round(ttype string) {
 			m += c.startTasks(ch, ReduceTask(c.job), c.reducerProc)
 		} else if ttype == "all" {
 			m += c.startTasks(ch, MapTask(c.job), c.mapperProc)
+			db.DPrintf(db.MR, "startTasks mappers %v", m)
 			m += c.startTasks(ch, ReduceTask(c.job), c.reducerProc)
+			db.DPrintf(db.MR, "startTasks mappers %v", m)
 		} else {
 			db.DFatalf("Unknown ttype: %v", ttype)
 		}
@@ -364,13 +374,13 @@ func (c *Coord) Work() {
 
 	for n := 0; ; {
 		db.DPrintf(db.ALWAYS, "run round %d\n", n)
-		// c.Round("all")
+		//		c.Round("all")
 		start := time.Now()
 		c.Round("map")
 		n := c.doneTasks(MapTask(c.job) + DONE)
 		if n == c.nmaptask {
 			ms := time.Since(start).Milliseconds()
-			log.Printf("map phase took %v ms\n", ms)
+			db.DPrintf(db.ALWAYS, "map phase took %v ms\n", ms)
 			c.Round("reduce")
 		}
 		if !c.doRestart() {
@@ -388,6 +398,8 @@ func (c *Coord) Work() {
 	db.DPrintf(db.ALWAYS, "job done\n")
 
 	atomic.StoreInt32(&c.done, 1)
+
+	JobDone(c.FsLib, c.job)
 
 	c.ClntExitOK()
 }

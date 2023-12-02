@@ -17,18 +17,13 @@ func NewFsLib(pcfg *proc.ProcEnv) (*FsLib, error) {
 	db.DPrintf(db.PORT, "NewFsLib: uname %s lip %s addrs %v\n", pcfg.GetUname(), pcfg.LocalIP, pcfg.EtcdIP)
 	fl := &FsLib{
 		pcfg:     pcfg,
-		FdClient: fdclnt.NewFdClient(pcfg, nil, sp.Tsize(10_000_000)),
+		FdClient: fdclnt.NewFdClient(pcfg, nil),
 	}
 	return fl, nil
 }
 
 func (fl *FsLib) ProcEnv() *proc.ProcEnv {
 	return fl.pcfg
-}
-
-func (fl *FsLib) NamedAddr() sp.Taddrs {
-	mnt := fl.GetMntNamed(fl.pcfg.GetUname())
-	return mnt.Addr
 }
 
 func (fl *FsLib) MountTree(addrs sp.Taddrs, tree, mount string) error {

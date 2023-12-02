@@ -11,6 +11,15 @@ import (
 	"sigmaos/sorteddir"
 )
 
+// This file implements directory operations on top of etcd.  It
+// assumes the caller (protsrv) has read/write locks for the
+// directories involved in the operation.  Directory entries are a
+// (name, etcd key) tuple.  To implement directory operations
+// atomically with respect to crashes (e.g., updating the directory
+// and creating a file) fsetcd uses etcd's transaction API.  The
+// caller (named/protsrv) must hold read/write locks on the
+// directories.
+
 const (
 	ROOT sp.Tpath = 1
 )
@@ -36,7 +45,7 @@ type DirInfo struct {
 
 func (fs *FsEtcd) isEmpty(di DirEntInfo) (bool, *serr.Err) {
 	if di.Perm.IsDir() {
-		dir, _, err := fs.readDir(di.Path, false)
+		dir, _, err := fs.readDir(di.Path, TSTAT_NONE)
 		if err != nil {
 			return false, err
 		}
@@ -53,9 +62,11 @@ func (fs *FsEtcd) isEmpty(di DirEntInfo) (bool, *serr.Err) {
 func (fs *FsEtcd) NewRootDir() *serr.Err {
 	nf, r := NewEtcdFileDir(sp.DMDIR, ROOT, sp.NoClntId, sp.NoLeaseId)
 	if r != nil {
+		db.DPrintf(db.FSETCD, "NewEtcdFileDir err %v", r)
 		return serr.NewErrError(r)
 	}
 	if err := fs.PutFile(ROOT, nf, sp.NoFence()); err != nil {
+		db.DPrintf(db.FSETCD, "NewRootDir PutFile err %v", err)
 		return err
 	}
 	db.DPrintf(db.FSETCD, "newRoot: PutFile %v\n", nf)
@@ -67,10 +78,11 @@ func (fs *FsEtcd) ReadRootDir() (*DirInfo, *serr.Err) {
 }
 
 func (fs *FsEtcd) Lookup(d sp.Tpath, name string) (DirEntInfo, *serr.Err) {
-	dir, _, err := fs.readDir(d, false)
+	dir, _, err := fs.readDir(d, TSTAT_NONE)
 	if err != nil {
 		return DirEntInfo{}, err
 	}
+	db.DPrintf(db.FSETCD, "Lookup %q %v %v\n", name, d, dir)
 	e, ok := dir.Ents.Lookup(name)
 	if ok {
 		return e.(DirEntInfo), nil
@@ -78,10 +90,9 @@ func (fs *FsEtcd) Lookup(d sp.Tpath, name string) (DirEntInfo, *serr.Err) {
 	return DirEntInfo{}, serr.NewErr(serr.TErrNotfound, name)
 }
 
-// XXX retry on version mismatch
 // OEXCL: should only succeed if file doesn't exist
 func (fs *FsEtcd) Create(d sp.Tpath, name string, path sp.Tpath, nf *EtcdFile, f sp.Tfence) (DirEntInfo, *serr.Err) {
-	dir, v, err := fs.readDir(d, false)
+	dir, v, err := fs.readDir(d, TSTAT_NONE)
 	if err != nil {
 		return DirEntInfo{}, err
 	}
@@ -90,26 +101,33 @@ func (fs *FsEtcd) Create(d sp.Tpath, name string, path sp.Tpath, nf *EtcdFile, f
 		return DirEntInfo{}, serr.NewErr(serr.TErrExists, name)
 	}
 	dir.Ents.Insert(name, DirEntInfo{Nf: nf, Path: path, Perm: nf.Tperm()})
-	db.DPrintf(db.FSETCD, "Create %q dir %v nf %v\n", name, dir, nf)
+	db.DPrintf(db.FSETCD, "Create %q dir %v (%v) nf %v\n", name, dir, d, nf)
 	if err := fs.create(d, dir, v, path, nf); err == nil {
 		di := DirEntInfo{Nf: nf, Perm: nf.Tperm(), Path: path}
+		if nf.Tperm().IsEphemeral() {
+			// don't cache directory anymore
+			fs.dc.remove(d)
+		} else {
+			fs.dc.update(d, dir)
+		}
 		return di, nil
 	} else {
+		db.DPrintf(db.FSETCD, "Create %q dir %v nf %v err %v", name, dir, nf, err)
+		dir.Ents.Delete(name)
 		return DirEntInfo{}, err
 	}
 }
 
 func (fs *FsEtcd) ReadDir(d sp.Tpath) (*DirInfo, *serr.Err) {
-	dir, _, err := fs.readDir(d, true)
+	dir, _, err := fs.readDir(d, TSTAT_STAT)
 	if err != nil {
 		return nil, err
 	}
-	dir.Ents.Delete(".")
 	return dir, nil
 }
 
 func (fs *FsEtcd) Remove(d sp.Tpath, name string, f sp.Tfence) *serr.Err {
-	dir, v, err := fs.readDir(d, false)
+	dir, v, err := fs.readDir(d, TSTAT_NONE)
 	if err != nil {
 		return err
 	}
@@ -132,13 +150,16 @@ func (fs *FsEtcd) Remove(d sp.Tpath, name string, f sp.Tfence) *serr.Err {
 	dir.Ents.Delete(name)
 
 	if err := fs.remove(d, dir, v, di.Path); err != nil {
+		db.DPrintf(db.FSETCD, "Remove entry %v err %v\n", name, err)
+		dir.Ents.Insert(name, di)
 		return err
 	}
+	fs.dc.update(d, dir)
 	return nil
 }
 
 func (fs *FsEtcd) Rename(d sp.Tpath, from, to string, f sp.Tfence) *serr.Err {
-	dir, v, err := fs.readDir(d, false)
+	dir, v, err := fs.readDir(d, TSTAT_NONE)
 	if err != nil {
 		return err
 	}
@@ -166,15 +187,22 @@ func (fs *FsEtcd) Rename(d sp.Tpath, from, to string, f sp.Tfence) *serr.Err {
 	}
 	dir.Ents.Delete(from)
 	dir.Ents.Insert(to, difrom)
-	return fs.rename(d, dir, v, topath)
+	if err := fs.rename(d, dir, v, topath); err == nil {
+		fs.dc.update(d, dir)
+		return nil
+	} else {
+		dir.Ents.Insert(from, difrom)
+		dir.Ents.Delete(to)
+		return err
+	}
 }
 
 func (fs *FsEtcd) Renameat(df sp.Tpath, from string, dt sp.Tpath, to string, f sp.Tfence) *serr.Err {
-	dirf, vf, err := fs.readDir(df, false)
+	dirf, vf, err := fs.readDir(df, TSTAT_NONE)
 	if err != nil {
 		return err
 	}
-	dirt, vt, err := fs.readDir(dt, false)
+	dirt, vt, err := fs.readDir(dt, TSTAT_NONE)
 	if err != nil {
 		return err
 	}
@@ -202,7 +230,20 @@ func (fs *FsEtcd) Renameat(df sp.Tpath, from string, dt sp.Tpath, to string, f s
 	}
 	dirf.Ents.Delete(from)
 	dirt.Ents.Insert(to, difrom)
-	return fs.renameAt(df, dirf, vf, dt, dirt, vt, topath)
+	if err := fs.renameAt(df, dirf, vf, dt, dirt, vt, topath); err == nil {
+		fs.dc.update(df, dirf)
+		if difrom.Perm.IsEphemeral() {
+			// don't cache directory anymore
+			fs.dc.remove(dt)
+		} else {
+			fs.dc.update(dt, dirt)
+		}
+		return nil
+	} else {
+		dirf.Ents.Insert(from, difrom)
+		dirt.Ents.Delete(to)
+		return err
+	}
 }
 
 func (fs *FsEtcd) Dump(l int, dir *DirInfo, pn path.Path, p sp.Tpath) error {
@@ -215,7 +256,7 @@ func (fs *FsEtcd) Dump(l int, dir *DirInfo, pn path.Path, p sp.Tpath) error {
 			di := v.(DirEntInfo)
 			fmt.Printf("%v%v %v\n", s, pn.Append(name), di)
 			if di.Perm.IsDir() {
-				nd, _, err := fs.readDir(di.Path, false)
+				nd, _, err := fs.readDir(di.Path, TSTAT_NONE)
 				if err == nil {
 					fs.Dump(l+1, nd, pn.Append(name), di.Path)
 				} else {

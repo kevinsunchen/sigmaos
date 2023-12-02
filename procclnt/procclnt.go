@@ -156,7 +156,7 @@ func (clnt *ProcClnt) spawn(kernelId string, how proc.Thow, p *proc.Proc, spread
 }
 
 func (clnt *ProcClnt) forceRunViaSchedd(kernelID string, p *proc.Proc) error {
-	err := clnt.scheddclnt.ForceRun(kernelID, p)
+	err := clnt.scheddclnt.ForceRun(kernelID, false, p)
 	if err != nil {
 		db.DPrintf(db.PROCCLNT_ERR, "forceRunViaSchedd: getScheddClnt %v err %v\n", kernelID, err)
 		if serr.IsErrCode(err, serr.TErrUnreachable) {
@@ -266,10 +266,13 @@ func (clnt *ProcClnt) waitExit(pid sp.Tpid, how proc.Thow) (*proc.Status, error)
 	st, err := clnt.wait(scheddclnt.EXIT, pid, kernelID, proc.EXIT_SEM, how)
 	// Mark proc as exited in local state
 	clnt.cs.Exited(pid, st)
+	if err != nil {
+		return nil, err
+	}
 
 	status, err := clnt.getExitStatus(pid, how)
 
-	return status, nil
+	return status, err
 }
 
 // Parent calls WaitExit() to wait until child proc has exited. If
@@ -389,6 +392,7 @@ func (clnt *ProcClnt) hasExited() sp.Tpid {
 func (clnt *ProcClnt) setExited(pid sp.Tpid) sp.Tpid {
 	clnt.Lock()
 	defer clnt.Unlock()
+
 	r := clnt.isExited
 	clnt.isExited = pid
 	return r

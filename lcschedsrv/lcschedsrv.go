@@ -10,6 +10,7 @@ import (
 	"sigmaos/memfssrv"
 	"sigmaos/perf"
 	"sigmaos/proc"
+	"sigmaos/procfs"
 	pqproto "sigmaos/procqsrv/proto"
 	"sigmaos/scheddclnt"
 	sp "sigmaos/sigmap"
@@ -34,6 +35,45 @@ func NewLCSched(mfs *memfssrv.MemFs) *LCSched {
 	}
 	lcs.cond = sync.NewCond(&lcs.mu)
 	return lcs
+}
+
+func (lcs *LCSched) GetProcs() []*proc.Proc {
+	lcs.mu.Lock()
+	defer lcs.mu.Unlock()
+
+	procs := make([]*proc.Proc, 0, lcs.lenL())
+	for _, q := range lcs.qs {
+		for _, p := range q.pmap {
+			procs = append(procs, p)
+		}
+	}
+	return procs
+}
+
+func (lcs *LCSched) Lookup(pid string) (*proc.Proc, bool) {
+	lcs.mu.Lock()
+	defer lcs.mu.Unlock()
+
+	for _, q := range lcs.qs {
+		if p, ok := q.pmap[sp.Tpid(pid)]; ok {
+			return p, ok
+		}
+	}
+	return nil, false
+}
+
+func (lcs *LCSched) lenL() int {
+	l := 0
+	for _, q := range lcs.qs {
+		l += len(q.pmap)
+	}
+	return l
+}
+
+func (lcs *LCSched) Len() int {
+	lcs.mu.Lock()
+	defer lcs.mu.Unlock()
+	return lcs.lenL()
 }
 
 func (lcs *LCSched) Enqueue(ctx fs.CtxI, req pqproto.EnqueueRequest, res *pqproto.EnqueueResponse) error {
@@ -92,7 +132,7 @@ func (lcs *LCSched) schedule() {
 
 func (lcs *LCSched) runProc(kernelID string, p *proc.Proc, ch chan string, r *Resources) {
 	db.DPrintf(db.LCSCHED, "runProc kernelID %v p %v", kernelID, p)
-	if err := lcs.scheddclnt.ForceRun(kernelID, p); err != nil {
+	if err := lcs.scheddclnt.ForceRun(kernelID, false, p); err != nil {
 		db.DFatalf("Schedd.Run %v err %v", kernelID, err)
 	}
 	// Notify the spawner that a schedd has been chosen.
@@ -151,13 +191,17 @@ func Run(prvdr sp.Tprovider) {
 
 	lcs := NewLCSched(mfs)
 	ssrv, err := sigmasrv.NewSigmaSrvMemFs(mfs, lcs)
-
 	if err != nil {
 		db.DFatalf("Error PDS: %v", err)
 	}
 
-	setupMemFsSrv(ssrv.MemFs)
-	setupFs(ssrv.MemFs)
+	// export queued procs through procfs. XXX maybe
+	// subdirectory per realm?
+	dir := procfs.NewProcDir(lcs)
+	if err := mfs.MkNod(sp.QUEUE, dir); err != nil {
+		db.DFatalf("Error mknod %v: %v", sp.QUEUE, err)
+	}
+
 	// Perf monitoring
 	p, err := perf.NewPerf(pcfg, perf.LCSCHED)
 

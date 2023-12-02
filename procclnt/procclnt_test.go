@@ -12,7 +12,6 @@ import (
 
 	db "sigmaos/debug"
 	"sigmaos/fsetcd"
-	"sigmaos/fslib"
 	"sigmaos/groupmgr"
 	"sigmaos/linuxsched"
 	"sigmaos/proc"
@@ -114,11 +113,12 @@ func TestWaitExitSimpleSingleBE(t *testing.T) {
 	status, err := ts.WaitExit(a.GetPid())
 	db.DPrintf(db.TEST, "Post waitexit")
 	assert.Nil(t, err, "WaitExit error")
-	assert.True(t, status.IsStatusOK(), "Exit status wrong: %v", status)
+	assert.True(t, status != nil && status.IsStatusOK(), "Exit status wrong: %v", status)
 
 	cleanSleeperResult(t, ts, a.GetPid())
 
 	ts.Shutdown()
+	// test.Dump(t)
 }
 
 func TestWaitExitSimpleSingleLC(t *testing.T) {
@@ -134,7 +134,7 @@ func TestWaitExitSimpleSingleLC(t *testing.T) {
 	status, err := ts.WaitExit(a.GetPid())
 	db.DPrintf(db.TEST, "Post waitexit")
 	assert.Nil(t, err, "WaitExit error")
-	assert.True(t, status.IsStatusOK(), "Exit status wrong: %v", status)
+	assert.True(t, status != nil && status.IsStatusOK(), "Exit status wrong: %v", status)
 
 	cleanSleeperResult(t, ts, a.GetPid())
 
@@ -157,7 +157,7 @@ func TestWaitExitSimpleMultiKernel(t *testing.T) {
 	status, err := ts.WaitExit(a.GetPid())
 	db.DPrintf(db.TEST, "Post waitexit")
 	assert.Nil(t, err, "WaitExit error")
-	assert.True(t, status.IsStatusOK(), "Exit status wrong")
+	assert.True(t, status != nil && status.IsStatusOK(), "Exit status wrong")
 
 	cleanSleeperResult(t, ts, a.GetPid())
 
@@ -172,7 +172,7 @@ func TestWaitExitOne(t *testing.T) {
 	pid := spawnSleeper(t, ts)
 	status, err := ts.WaitExit(pid)
 	assert.Nil(t, err, "WaitExit error")
-	assert.True(t, status.IsStatusOK(), "Exit status wrong")
+	assert.True(t, status != nil && status.IsStatusOK(), "Exit status wrong")
 
 	// cleaned up (may take a bit)
 	time.Sleep(500 * time.Millisecond)
@@ -201,7 +201,7 @@ func TestWaitExitN(t *testing.T) {
 			pid := spawnSleeper(t, ts)
 			status, err := ts.WaitExit(pid)
 			assert.Nil(t, err, "WaitExit error")
-			assert.True(t, status.IsStatusOK(), "Exit status wrong %v", status)
+			assert.True(t, status != nil && status.IsStatusOK(), "Exit status wrong %v", status)
 			db.DPrintf(db.TEST, "Exited %v", pid)
 
 			// cleaned up (may take a bit)
@@ -228,7 +228,7 @@ func TestWaitExitParentRetStat(t *testing.T) {
 	time.Sleep(2 * SLEEP_MSECS * time.Millisecond)
 	status, err := ts.WaitExit(pid)
 	assert.Nil(t, err, "WaitExit error")
-	assert.True(t, status.IsStatusOK(), "Exit status wrong")
+	assert.True(t, status != nil && status.IsStatusOK(), "Exit status wrong")
 
 	// cleaned up
 	for {
@@ -260,7 +260,7 @@ func TestWaitExitParentAbandons(t *testing.T) {
 	err := ts.WaitStart(pid)
 	assert.Nil(t, err, "WaitStart error")
 	status, err := ts.WaitExit(pid)
-	assert.True(t, status.IsStatusOK(), "WaitExit status error")
+	assert.True(t, status != nil && status.IsStatusOK(), "WaitExit status error")
 	assert.Nil(t, err, "WaitExit error")
 	// Wait for the child to run & finish
 	time.Sleep(2 * SLEEP_MSECS * time.Millisecond)
@@ -308,11 +308,6 @@ func TestWaitStart(t *testing.T) {
 	pid := spawnSleeper(t, ts)
 	err := ts.WaitStart(pid)
 	assert.Nil(t, err, "WaitStart error")
-
-	// Check if proc exists
-	sts, err := ts.GetDir(path.Join(sp.SCHEDD, schedd(ts), sp.RUNNING))
-	assert.Nil(t, err, "Readdir")
-	assert.True(t, fslib.Present(sts, []string{pid.String()}), "pid")
 
 	// Make sure the proc hasn't finished yet...
 	checkSleeperResultFalse(t, ts, pid)
@@ -380,7 +375,7 @@ func TestSpawnManyProcsParallel(t *testing.T) {
 				status, err := ts.WaitExit(a.GetPid())
 				db.DPrintf(db.TEST, "Done WaitExit %v", pid)
 				assert.Nil(t, err, "WaitExit")
-				assert.True(t, status.IsStatusOK(), "Status not OK")
+				assert.True(t, status != nil && status.IsStatusOK(), "Status not OK")
 				cleanSleeperResult(t, ts, pid)
 			}
 			done <- i
@@ -406,7 +401,7 @@ func TestCrashProcOne(t *testing.T) {
 
 	status, err := ts.WaitExit(a.GetPid())
 	assert.Nil(t, err, "WaitExit")
-	assert.True(t, status.IsStatusErr(), "Status not err")
+	assert.True(t, status != nil && status.IsStatusErr(), "Status not err")
 	assert.Equal(t, "Non-sigma error  Non-sigma error  exit status 2", status.Msg(), "WaitExit")
 
 	ts.Shutdown()
@@ -423,7 +418,7 @@ func TestEarlyExit1(t *testing.T) {
 	// Wait for parent to finish
 	status, err := ts.WaitExit(a.GetPid())
 	assert.Nil(t, err, "WaitExit")
-	assert.True(t, status.IsStatusOK(), "WaitExit")
+	assert.True(t, status != nil && status.IsStatusOK(), "WaitExit")
 
 	// Child should not have terminated yet.
 	checkSleeperResultFalse(t, ts, pid1)
@@ -460,7 +455,7 @@ func TestEarlyExitN(t *testing.T) {
 			// Wait for parent to finish
 			status, err := ts.WaitExit(a.GetPid())
 			assert.Nil(t, err, "WaitExit err: %v", err)
-			assert.True(t, status.IsStatusOK(), "WaitExit: %v", status)
+			assert.True(t, status != nil && status.IsStatusOK(), "WaitExit: %v", status)
 
 			time.Sleep(2 * SLEEP_MSECS * time.Millisecond)
 
@@ -551,7 +546,7 @@ func TestEvict(t *testing.T) {
 
 	status, err := ts.WaitExit(pid)
 	assert.Nil(t, err, "WaitExit")
-	assert.True(t, status.IsStatusEvicted(), "WaitExit status")
+	assert.True(t, status != nil && status.IsStatusEvicted(), "WaitExit status")
 
 	ts.Shutdown()
 }
@@ -571,7 +566,7 @@ func TestEvictN(t *testing.T) {
 	for i := 0; i < N; i++ {
 		status, err := ts.WaitExit(pids[i])
 		assert.Nil(t, err, "WaitExit")
-		assert.True(t, status.IsStatusEvicted(), "WaitExit status")
+		assert.True(t, status != nil && status.IsStatusEvicted(), "WaitExit status")
 	}
 
 	ts.Shutdown()
@@ -606,7 +601,7 @@ func TestBurstSpawn(t *testing.T) {
 	for _, p := range ps {
 		status, err := ts.WaitExit(p.GetPid())
 		assert.Nil(t, err, "WaitExit: %v", err)
-		assert.True(t, status.IsStatusEvicted(), "Wrong status: %v", status)
+		assert.True(t, status != nil && status.IsStatusEvicted(), "Wrong status: %v", status)
 	}
 
 	ts.Shutdown()
@@ -630,7 +625,7 @@ func TestReserveCores(t *testing.T) {
 
 	status, err := ts.WaitExit(pid)
 	assert.Nil(t, err, "WaitExit")
-	assert.True(t, status.IsStatusOK(), "WaitExit status")
+	assert.True(t, status != nil && status.IsStatusOK(), "WaitExit status")
 
 	// Make sure the second proc didn't finish
 	checkSleeperResult(t, ts, pid)
@@ -640,7 +635,7 @@ func TestReserveCores(t *testing.T) {
 
 	status, err = ts.WaitExit(pid1)
 	assert.Nil(t, err, "WaitExit 2")
-	assert.True(t, status.IsStatusOK(), "WaitExit status 2")
+	assert.True(t, status != nil && status.IsStatusOK(), "WaitExit status 2: %v", status)
 	end := time.Now()
 
 	assert.True(t, end.Sub(start) > (SLEEP_MSECS*2)*time.Millisecond, "Parallelized")
@@ -687,19 +682,25 @@ func TestMaintainReplicationLevelCrashSchedd(t *testing.T) {
 	N_REPL := 3
 	OUTDIR := "name/spinner-ephs"
 
+	db.DPrintf(db.TEST, "Boot node 2")
 	// Start a couple new nodes.
 	err := ts.BootNode(1)
 	assert.Nil(t, err, "BootNode %v", err)
+	db.DPrintf(db.TEST, "Boot node 3")
 	err = ts.BootNode(1)
 	assert.Nil(t, err, "BootNode %v", err)
+	db.DPrintf(db.TEST, "Done booting nodes")
 
 	ts.RmDir(OUTDIR)
 	err = ts.MkDir(OUTDIR, 0777)
 	assert.Nil(t, err, "Mkdir")
 
+	db.DPrintf(db.TEST, "Rm out dir done")
+
 	// Start a bunch of replicated spinner procs.
 	cfg := groupmgr.NewGroupConfig(N_REPL, "spinner", []string{}, 0, OUTDIR)
 	sm := cfg.StartGrpMgr(ts.SigmaClnt, 0)
+	db.DPrintf(db.TEST, "GrpMgr started")
 
 	// Wait for them to spawn.
 	time.Sleep(5 * time.Second)
@@ -708,9 +709,11 @@ func TestMaintainReplicationLevelCrashSchedd(t *testing.T) {
 	st, err := ts.GetDir(OUTDIR)
 	assert.Nil(t, err, "readdir1")
 	assert.Equal(t, N_REPL, len(st), "wrong num spinners check #1")
+	db.DPrintf(db.TEST, "Get OutDir")
 
 	err = ts.KillOne(sp.SCHEDDREL)
 	assert.Nil(t, err, "kill schedd")
+	db.DPrintf(db.TEST, "Killed a schedd")
 
 	// Wait for them to respawn.
 	time.Sleep(2 * fsetcd.LeaseTTL * time.Second)
@@ -719,9 +722,11 @@ func TestMaintainReplicationLevelCrashSchedd(t *testing.T) {
 	st, err = ts.GetDir(OUTDIR)
 	assert.Nil(t, err, "readdir1")
 	assert.Equal(t, N_REPL, len(st), "wrong num spinners check #2")
+	db.DPrintf(db.TEST, "Got out dir again")
 
 	err = ts.KillOne(sp.SCHEDDREL)
 	assert.Nil(t, err, "kill schedd")
+	db.DPrintf(db.TEST, "Killed another schedd")
 
 	// Wait for them to respawn.
 	time.Sleep(2 * fsetcd.LeaseTTL * time.Second)
@@ -730,11 +735,14 @@ func TestMaintainReplicationLevelCrashSchedd(t *testing.T) {
 	st, err = ts.GetDir(OUTDIR)
 	assert.Nil(t, err, "readdir1")
 	assert.Equal(t, N_REPL, len(st), "wrong num spinners check #3")
+	db.DPrintf(db.TEST, "Got out dir 3")
 
-	sm.Stop()
+	sm.StopGroup()
+	db.DPrintf(db.TEST, "Stopped GroupMgr")
 
 	err = ts.RmDir(OUTDIR)
 	assert.Nil(t, err, "RmDir: %v", err)
+	db.DPrintf(db.TEST, "Get out dir 4")
 
 	ts.Shutdown()
 }

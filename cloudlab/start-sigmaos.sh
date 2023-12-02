@@ -1,15 +1,17 @@
 #!/bin/bash
 
 usage() {
-  echo "Usage: $0 [--branch BRANCH] [--reserveMcpu rmcpu] [--pull TAG] [--n N_VM] [--ncores NCORES] [--overlays]" 1>&2
+  echo "Usage: $0 [--branch BRANCH] [--reserveMcpu rmcpu] [--pull TAG] [--n N_VM] [--ncores NCORES] [--overlays] [--turbo]" 1>&2
 }
 
+VPC=""
 N_VM=""
 NCORES=4
 UPDATE=""
 TAG=""
 OVERLAYS=""
 TOKEN=""
+TURBO=""
 RMCPU="0"
 BRANCH="master"
 while [[ $# -gt 0 ]]; do
@@ -34,6 +36,10 @@ while [[ $# -gt 0 ]]; do
     NCORES=$1
     shift
     ;;
+  --turbo)
+    shift
+    TURBO="--turbo"
+    ;;
   --pull)
     shift
     TAG=$1
@@ -46,7 +52,7 @@ while [[ $# -gt 0 ]]; do
   --reserveMcpu)
     shift
     RMCPU="$1"
-	shift
+  	shift
     ;;
   -help)
     usage
@@ -65,7 +71,7 @@ if [ $# -gt 0 ]; then
     exit 1
 fi
 
-if [ $NCORES -ne 4 ] && [ $NCORES -ne 2 ]; then
+if [ $NCORES -ne 4 ] && [ $NCORES -ne 2 ] && [ $NCORES -ne 20 ] && [ $NCORES -ne 40 ]; then
   echo "Bad ncores $NCORES"
   exit 1
 fi
@@ -78,16 +84,15 @@ vms=`cat servers.txt | cut -d " " -f2`
 vma=($vms)
 MAIN="${vma[0]}"
 MAIN_PRIVADDR=$(./leader-ip.sh)
-SIGMASTART="${vma[1]}"
-SIGMANAMED="${SIGMASTART}:1111"
+SIGMASTART=$MAIN
+SIGMASTART_PRIVADDR=$MAIN_PRIVADDR
 IMGS="arielszekely/sigmauser arielszekely/sigmaos arielszekely/sigmaosbase"
-#export SIGMANAMED="${SIGMANAMED}"
 
 if ! [ -z "$N_VM" ]; then
   vms=${vma[@]:0:$N_VM}
 fi
 
-if [ ! -z "$TAG" ]; then
+if ! [ -z "$TAG" ]; then
   ./update-repo.sh --parallel --branch $BRANCH
 fi
 
@@ -95,7 +100,7 @@ vm_ncores=$(ssh -i $DIR/keys/cloudlab-sigmaos $LOGIN@$MAIN nproc)
 
 for vm in $vms; do
   echo "starting SigmaOS on $vm!"
-  $DIR/setup-for-benchmarking.sh $vm
+  $DIR/setup-for-benchmarking.sh $vm $TURBO
   # Get hostname.
   VM_NAME=$(ssh -i $DIR/keys/cloudlab-sigmaos $LOGIN@$vm hostname -s)
   KERNELID="sigma-$VM_NAME-$(echo $RANDOM | md5sum | head -c 3)"
@@ -107,43 +112,62 @@ for vm in $vms; do
     echo "ncores:"
     nproc
   else
-    ./sigmaos/set-cores.sh --set 1 --start 2 --end 3 > /dev/null
-    echo "ncores:"
-    nproc
+    if [ $NCORES -eq 4 ]; then
+      ./sigmaos/set-cores.sh --set 1 --start 2 --end 3 > /dev/null
+      ./sigmaos/set-cores.sh --set 0 --start 4 --end 39 > /dev/null
+      echo "ncores:"
+      nproc
+    else
+      if [ $NCORES -eq 20 ]; then
+        ./sigmaos/set-cores.sh --set 0 --start 20 --end 39 > /dev/null
+        ./sigmaos/set-cores.sh --set 1 --start 2 --end 19 > /dev/null
+        echo "ncores:"
+        nproc
+      else
+        if [ $NCORES -eq 40 ]; then
+          ./sigmaos/set-cores.sh --set 1 --start 2 --end 39 > /dev/null
+          echo "ncores:"
+          nproc
+        fi
+      fi
+    fi
   fi
 
-  cd ~/
-  aws s3 --profile sigmaos cp s3://9ps3/img-save/1.jpg .
-  aws s3 --profile sigmaos cp s3://9ps3/img-save/6.jpg .
+  aws s3 --profile sigmaos cp s3://9ps3/img-save/1.jpg ~/
+  aws s3 --profile sigmaos cp s3://9ps3/img-save/6.jpg ~/
+  aws s3 --profile sigmaos cp s3://9ps3/img-save/7.jpg ~/
+  aws s3 --profile sigmaos cp s3://9ps3/img-save/8.jpg ~/
 
   cd sigmaos
 
   echo "$PWD $SIGMADEBUG"
-  if [ "${vm}" = "${MAIN}" ] || [ "${vm}" = "${SIGMASTART}" ]; then
-    if [ "${vm}" = "${MAIN}" ]; then 
-      echo "START DB: ${MAIN_PRIVADDR}"
-      ./make.sh --norace linux
-      ./start-network.sh --addr $MAIN_PRIVADDR
-      ./start-db.sh
-      ./start-jaeger.sh
+  if [ "${vm}" = "${MAIN}" ]; then
+    echo "START DB: ${MAIN_PRIVADDR}"
+    ./start-db.sh
+    ./make.sh --norace linux
+    echo "START NETWORK $MAIN_PRIVADDR"
+    ./start-network.sh --addr $MAIN_PRIVADDR
+    echo "START ${SIGMASTART} ${SIGMASTART_PRIVADDR} ${KERNELID}"
+    if ! docker ps | grep -q etcd ; then
+      echo "START etcd"
+      ./start-etcd.sh
     fi
-    if [ "${vm}" = "${SIGMASTART}" ]; then
-      echo "START ${SIGMANAMED} ${KERNELID}"
-      ./make.sh --norace linux
-      ./start-kernel.sh --boot realm --pull ${TAG} --reserveMcpu ${RMCPU} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 --jaeger ${MAIN_PRIVADDR} ${OVERLAYS} ${KERNELID} 2>&1 | tee /tmp/start.out
-      docker cp ~/1.jpg ${KERNELID}:/home/sigmaos/1.jpg
-      docker cp ~/6.jpg ${KERNELID}:/home/sigmaos/6.jpg
-    fi
-  else
-    echo "JOIN ${SIGMANAMED} ${KERNELID}"
-    export SIGMANAMED=10.10.1.2
-     ${TOKEN} 2>&1 > /dev/null
-    ./start-kernel.sh --boot node --named ${SIGMANAMED} --pull ${TAG} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 --jaeger ${MAIN_PRIVADDR} ${OVERLAYS} ${KERNELID} 2>&1 | tee /tmp/join.out
+    ./start-kernel.sh --boot realm --named ${SIGMASTART_PRIVADDR} --pull ${TAG} --reserveMcpu ${RMCPU} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 ${OVERLAYS} ${KERNELID} 2>&1 | tee /tmp/start.out
     docker cp ~/1.jpg ${KERNELID}:/home/sigmaos/1.jpg
     docker cp ~/6.jpg ${KERNELID}:/home/sigmaos/6.jpg
+    docker cp ~/7.jpg ${KERNELID}:/home/sigmaos/7.jpg
+    docker cp ~/8.jpg ${KERNELID}:/home/sigmaos/8.jpg
+  else
+    echo "JOIN ${SIGMASTART} ${KERNELID}"
+    ${TOKEN} 2>&1 > /dev/null
+    ./start-kernel.sh --boot node --named ${SIGMASTART_PRIVADDR} --pull ${TAG} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 ${OVERLAYS} ${KERNELID} 2>&1 | tee /tmp/join.out
+    docker cp ~/1.jpg ${KERNELID}:/home/sigmaos/1.jpg
+    docker cp ~/6.jpg ${KERNELID}:/home/sigmaos/6.jpg
+    docker cp ~/7.jpg ${KERNELID}:/home/sigmaos/7.jpg
+    docker cp ~/8.jpg ${KERNELID}:/home/sigmaos/8.jpg
   fi
 ENDSSH
- if [ "${vm}" = "${MAIN}" ]; then
-     TOKEN=$(ssh -i $DIR/keys/cloudlab-sigmaos $LOGIN@$vm docker swarm join-token worker | grep docker)
- fi   
+  if [ "${vm}" = "${MAIN}" ]; then
+    TOKEN=$(ssh -i $DIR/keys/cloudlab-sigmaos $LOGIN@$vm docker swarm join-token worker | grep docker)
+  fi   
 done

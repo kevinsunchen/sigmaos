@@ -8,11 +8,12 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
-	"sigmaos/container"
 	db "sigmaos/debug"
 	"sigmaos/kproc"
+	"sigmaos/netsigma"
 	"sigmaos/port"
 	"sigmaos/proc"
 	"sigmaos/serr"
@@ -23,7 +24,6 @@ import (
 const (
 	SLEEP_S          = 2
 	REPL_PORT_OFFSET = 100
-	SUBSYSTEM_INFO   = "subsystem-info"
 
 	FPORT port.Tport = 1112
 	LPORT port.Tport = 1132
@@ -44,10 +44,12 @@ type Param struct {
 }
 
 type Kernel struct {
+	sync.Mutex
 	*sigmaclnt.SigmaClnt
-	Param *Param
-	svcs  *Services
-	ip    string
+	Param        *Param
+	svcs         *Services
+	ip           string
+	shuttingDown bool
 }
 
 func newKernel(param *Param) *Kernel {
@@ -59,7 +61,7 @@ func newKernel(param *Param) *Kernel {
 
 func NewKernel(p *Param, pcfg *proc.ProcEnv) (*Kernel, error) {
 	k := newKernel(p)
-	ip, err := container.LocalIP()
+	ip, err := netsigma.LocalIP()
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +101,11 @@ func (k *Kernel) Ip() string {
 }
 
 func (k *Kernel) Shutdown() error {
+	k.Lock()
+	defer k.Unlock()
+
+	k.shuttingDown = true
+
 	db.DPrintf(db.KERNEL, "Shutdown %v\n", k.Param.KernelId)
 	k.shutdown()
 	N := 200 // Crashing procds in mr test leave several fids open; maybe too many?
@@ -153,11 +160,12 @@ func (k *Kernel) shutdown() {
 			for i := 0; i < MAX_EVICT_RETRIES; i++ {
 				err := k.EvictKernelProc(pid, k.svcs.svcMap[pid].how)
 				if err == nil || !serr.IsErrCode(err, serr.TErrUnreachable) {
+					db.DPrintf(db.KERNEL, "Evicted proc %v err %v", pid, err)
 					break
 				}
 				if i == MAX_EVICT_RETRIES-1 {
 					db.DPrintf(db.ALWAYS, "Giving up trying to evict kernel proc! %v", pid)
-					db.DPrintf(db.KERNEL, "Giving up trying to evict kernel proc!")
+					db.DPrintf(db.KERNEL, "Giving up trying to evict kernel proc! %v", pid)
 				}
 				db.DPrintf(db.KERNEL, "Error unreachable evict kernel proc. Retrying.")
 				time.Sleep(100 * time.Millisecond)

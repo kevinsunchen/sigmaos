@@ -9,12 +9,12 @@ import (
 
 	//	"runtime"
 
-	"sigmaos/container"
 	"sigmaos/crash"
 	db "sigmaos/debug"
 	"sigmaos/fsetcd"
 	"sigmaos/fslibsrv"
 	"sigmaos/leaderetcd"
+	"sigmaos/netsigma"
 	"sigmaos/perf"
 	"sigmaos/port"
 	"sigmaos/portclnt"
@@ -24,6 +24,9 @@ import (
 	sp "sigmaos/sigmap"
 	"sigmaos/sigmasrv"
 )
+
+// Named implements fs/fs.go using fsetcd.  It assumes that its caller
+// (protsrv) holds read/write locks.
 
 type Named struct {
 	*sigmaclnt.SigmaClnt
@@ -108,6 +111,8 @@ func Run(args []string) error {
 		db.DFatalf("Error newSrv %v\n", err)
 	}
 
+	db.DPrintf(db.NAMED, "newSrv %v mnt %v", nd.realm, mnt)
+
 	pn = sp.NAMED
 	if nd.realm == sp.ROOTREALM {
 		db.DPrintf(db.ALWAYS, "SetRootNamed %v mnt %v\n", nd.realm, mnt)
@@ -156,7 +161,7 @@ func Run(args []string) error {
 }
 
 func (nd *Named) newSrv() (sp.Tmount, error) {
-	ip, err := container.LocalIP()
+	ip, err := netsigma.LocalIP()
 	if err != nil {
 		return sp.NullMount(), err
 	}

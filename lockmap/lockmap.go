@@ -23,8 +23,27 @@ import (
 // parent directory, then the file or child directory.
 //
 
+type Tlock int
+
+const (
+	RLOCK Tlock = iota + 1
+	WLOCK
+)
+
+func (t Tlock) String() string {
+	switch t {
+	case RLOCK:
+		return "RLock"
+	case WLOCK:
+		return "WLock"
+	default:
+		db.DFatalf("Unknown lock type %v", int(t))
+		return "unknown"
+	}
+}
+
 type PathLock struct {
-	sync.Mutex
+	sync.RWMutex
 	//deadlock.Mutex
 	path string // the locked path
 }
@@ -72,9 +91,13 @@ func (plt *PathLockTable) allocLockString(pn string) *PathLock {
 	return plt.allocLockStringL(pn)
 }
 
-func (plt *PathLockTable) Acquire(ctx fs.CtxI, path path.Path) *PathLock {
+func (plt *PathLockTable) Acquire(ctx fs.CtxI, path path.Path, ltype Tlock) *PathLock {
 	lk := plt.allocLock(path)
-	lk.Lock()
+	if ltype == WLOCK {
+		lk.Lock()
+	} else {
+		lk.RLock()
+	}
 	db.DPrintf(db.LOCKMAP, "%v: Lock '%s'", ctx.Uname(), lk.path)
 	return lk
 }
@@ -87,30 +110,38 @@ func (plt *PathLockTable) release(lk *PathLock) bool {
 
 // Release lock for path. Caller should have watch locked through
 // Acquire().
-func (plt *PathLockTable) Release(ctx fs.CtxI, lk *PathLock) {
+func (plt *PathLockTable) Release(ctx fs.CtxI, lk *PathLock, ltype Tlock) {
 	db.DPrintf(db.LOCKMAP, "%v: Release '%s'", ctx.Uname(), lk.path)
-	lk.Unlock()
+	if ltype == WLOCK {
+		lk.Unlock()
+	} else {
+		lk.RUnlock()
+	}
 	plt.release(lk)
 }
 
 // Caller must have dlk locked
-func (plt *PathLockTable) HandOverLock(ctx fs.CtxI, dlk *PathLock, name string) *PathLock {
+func (plt *PathLockTable) HandOverLock(ctx fs.CtxI, dlk *PathLock, name string, ltype Tlock) *PathLock {
 	flk := plt.allocLockString(dlk.path + "/" + name)
 
 	db.DPrintf(db.LOCKMAP, "%v: HandoverLock '%s' %s", ctx.Uname(), dlk.path, name)
 
-	flk.Lock()
-	plt.Release(ctx, dlk)
+	if ltype == WLOCK {
+		flk.Lock()
+	} else {
+		flk.RLock()
+	}
+	plt.Release(ctx, dlk, ltype)
 	return flk
 }
 
-func (plt *PathLockTable) AcquireLocks(ctx fs.CtxI, dir path.Path, file string) (*PathLock, *PathLock) {
-	dlk := plt.Acquire(ctx, dir)
-	flk := plt.Acquire(ctx, append(dir, file))
+func (plt *PathLockTable) AcquireLocks(ctx fs.CtxI, dir path.Path, file string, ltype Tlock) (*PathLock, *PathLock) {
+	dlk := plt.Acquire(ctx, dir, ltype)
+	flk := plt.Acquire(ctx, append(dir, file), ltype)
 	return dlk, flk
 }
 
-func (plt *PathLockTable) ReleaseLocks(ctx fs.CtxI, dlk, flk *PathLock) {
-	plt.Release(ctx, dlk)
-	plt.Release(ctx, flk)
+func (plt *PathLockTable) ReleaseLocks(ctx fs.CtxI, dlk, flk *PathLock, ltype Tlock) {
+	plt.Release(ctx, dlk, ltype)
+	plt.Release(ctx, flk, ltype)
 }

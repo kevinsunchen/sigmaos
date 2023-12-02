@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	endpointsBase = []string{":2379", ":22379", ":32379"}
+	endpointsBase = []string{":3379", ":3380", ":3381", ":3382", ":3383"}
 )
 
 type FsEtcd struct {
@@ -27,6 +27,7 @@ type FsEtcd struct {
 	fencekey string
 	fencerev int64
 	realm    sp.Trealm
+	dc       *Dcache
 }
 
 func NewFsEtcd(realm sp.Trealm, etcdIP string) (*FsEtcd, error) {
@@ -34,6 +35,7 @@ func NewFsEtcd(realm sp.Trealm, etcdIP string) (*FsEtcd, error) {
 	for i := range endpointsBase {
 		endpoints = append(endpoints, etcdIP+endpointsBase[i])
 	}
+	db.DPrintf(db.FSETCD, "FsEtcd etcd endpoints: %v", endpoints)
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   endpoints,
 		DialTimeout: DialTimeout,
@@ -41,12 +43,16 @@ func NewFsEtcd(realm sp.Trealm, etcdIP string) (*FsEtcd, error) {
 	if err != nil {
 		return nil, err
 	}
-	fs := &FsEtcd{Client: cli, realm: realm}
+	fs := &FsEtcd{Client: cli, realm: realm, dc: newDcache()}
 	return fs, nil
 }
 
 func (fs *FsEtcd) Close() error {
 	return fs.Client.Close()
+}
+
+func (fs *FsEtcd) Clnt() *clientv3.Client {
+	return fs.Client
 }
 
 func (fs *FsEtcd) Fence(key string, rev int64) {
@@ -74,7 +80,7 @@ func (fs *FsEtcd) SetRootNamed(mnt sp.Tmount) *serr.Err {
 		ops := []clientv3.Op{
 			clientv3.OpPut(fs.path2key(sp.ROOTREALM, BOOT), string(b)),
 		}
-		resp, err := fs.Txn(context.TODO()).If(cmp...).Then(ops...).Commit()
+		resp, err := fs.Clnt().Txn(context.TODO()).If(cmp...).Then(ops...).Commit()
 		if err != nil {
 			db.DPrintf(db.FSETCD, "SetNamed txn %v err %v\n", nf, err)
 			return serr.NewErrError(err)
@@ -102,5 +108,6 @@ func GetRootNamed(realm sp.Trealm, etcdIP string) (sp.Tmount, *serr.Err) {
 		return sp.Tmount{}, sr
 	}
 	db.DPrintf(db.FSETCD, "GetNamed mnt %v\n", mnt)
+	fs.Close()
 	return mnt, nil
 }
