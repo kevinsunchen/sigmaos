@@ -34,6 +34,7 @@ const (
 	TEST1           = "TEST1"
 	DELAY           = "DELAY"
 	CRASH           = "CRASH"
+	PERF            = "PERF"
 )
 
 // Apps
@@ -96,8 +97,8 @@ const (
 	BOOT                      = "BOOT"
 	CONTAINER                 = "CONTAINER"
 	NAMED                     = "NAMED"
+	NAMED_ERR                 = NAMED + ERR
 	FSETCD                    = "FSETCD"
-	FSETCDLEASE               = "FSETCDLEASE"
 	PROCMGR                   = "PROCMGR"
 	UPROCDMGR                 = "UPROCDMGR"
 	UPROCD                    = "UPROCD"
@@ -116,6 +117,7 @@ const (
 	SCHEDDCLNT_ERR            = "SCHEDDCLNT" + ERR
 	PROCMGR_ERR               = PROCMGR + ERR
 	PROCCACHE                 = "PROCCACHE"
+	PROCFS                    = "PROCFS"
 	CGROUP                    = "CGROUP"
 	CGROUP_ERR                = "CGROUP_ERR"
 	S3                        = "S3"
@@ -190,6 +192,7 @@ const (
 	FDCLNT_ERR                    = FDCLNT + ERR
 	FIDCLNT                       = "FIDCLNT"
 	FIDCLNT_ERR                   = FIDCLNT + ERR
+	RPCCLNT                       = "RPCCLNT"
 	MOUNT                         = "MOUNT"
 	MOUNT_ERR                     = MOUNT + ERR
 	PATHCLNT                      = "PATHCLNT"

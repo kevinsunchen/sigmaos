@@ -3,6 +3,7 @@ package fslibsrv_test
 import (
 	"bufio"
 	"flag"
+	"fmt"
 	gopath "path"
 	"strconv"
 	"testing"
@@ -19,7 +20,7 @@ import (
 	"sigmaos/test"
 )
 
-var pathname string // e.g., --path "name/ux/~local/fslibtest"
+var pathname string // e.g., --path "name/ux/~local/"
 
 func init() {
 	flag.StringVar(&pathname, "path", sp.NAMED, "path for file system")
@@ -29,8 +30,10 @@ const (
 	KBYTE      = 1 << 10
 	NRUNS      = 3
 	SYNCFILESZ = 100 * KBYTE
-	FILESZ     = 100 * sp.MBYTE
-	WRITESZ    = 4096
+	//	SYNCFILESZ = 250 * KBYTE
+	// SYNCFILESZ = WRITESZ
+	FILESZ  = 100 * sp.MBYTE
+	WRITESZ = 4096
 )
 
 func measure(p *perf.Perf, msg string, f func() sp.Tlength) sp.Tlength {
@@ -224,15 +227,19 @@ func TestWriteFilePerfMultiClient(t *testing.T) {
 }
 
 func TestReadFilePerfSingle(t *testing.T) {
+	var sz sp.Tlength
+	var err error
+
 	ts := test.NewTstatePath(t, pathname)
 	fn := gopath.Join(pathname, "f")
 	buf := test.NewBuf(WRITESZ)
+
 	// Remove just in case it was left over from a previous run.
 	ts.Remove(fn)
-	sz := newFile(t, ts.FsLib, fn, HBUF, buf, SYNCFILESZ)
+	sz = newFile(t, ts.FsLib, fn, HBUF, buf, SYNCFILESZ)
+
 	p1, r := perf.NewPerfMulti(ts.ProcEnv(), perf.BENCH, perf.READER)
 	assert.Nil(t, r)
-	defer p1.Done()
 	measure(p1, "reader", func() sp.Tlength {
 		r, err := ts.OpenReader(fn)
 		assert.Nil(t, err)
@@ -241,24 +248,30 @@ func TestReadFilePerfSingle(t *testing.T) {
 		r.Close()
 		return n
 	})
-	err := ts.Remove(fn)
+	p1.Done()
+
+	err = ts.Remove(fn)
 	assert.Nil(t, err)
+	sz = newFile(t, ts.FsLib, fn, HBUF, buf, FILESZ)
+
 	p2, err := perf.NewPerfMulti(ts.ProcEnv(), perf.BENCH, perf.BUFREADER)
 	assert.Nil(t, err)
-	defer p2.Done()
-	sz = newFile(t, ts.FsLib, fn, HBUF, buf, FILESZ)
 	measure(p2, "bufreader", func() sp.Tlength {
 		r, err := ts.OpenReader(fn)
-		assert.Nil(t, err)
 		br := bufio.NewReaderSize(r, sp.BUFSZ)
 		n, err := test.Reader(t, br, buf, sz)
 		assert.Nil(t, err)
 		r.Close()
 		return n
 	})
+	p2.Done()
+
+	err = ts.Remove(fn)
+	assert.Nil(t, err)
+	sz = newFile(t, ts.FsLib, fn, HBUF, buf, FILESZ)
+
 	p3, err := perf.NewPerfMulti(ts.ProcEnv(), perf.BENCH, perf.ABUFREADER)
 	assert.Nil(t, err)
-	defer p3.Done()
 	measure(p3, "readahead", func() sp.Tlength {
 		r, err := ts.OpenAsyncReader(fn, 0)
 		assert.Nil(t, err)
@@ -267,14 +280,21 @@ func TestReadFilePerfSingle(t *testing.T) {
 		r.Close()
 		return n
 	})
+	p3.Done()
+
 	err = ts.Remove(fn)
 	assert.Nil(t, err)
+
 	ts.Shutdown()
 }
 
 func TestReadFilePerfMultiClient(t *testing.T) {
+	const (
+		NTRIAL = 1000
+	)
+
 	ts := test.NewTstatePath(t, pathname)
-	N_CLI := 10
+	N_CLI := 4
 	buf := test.NewBuf(WRITESZ)
 	done := make(chan sp.Tlength)
 	fns := make([]string, 0, N_CLI)
@@ -293,16 +313,19 @@ func TestReadFilePerfMultiClient(t *testing.T) {
 	}
 	p1, err := perf.NewPerfMulti(ts.ProcEnv(), perf.BENCH, perf.READER)
 	assert.Nil(t, err)
-	defer p1.Done()
 	start := time.Now()
 	for i := range fns {
 		go func(i int) {
 			n := measure(p1, "reader", func() sp.Tlength {
-				r, err := fsls[i].OpenReader(fns[i])
-				assert.Nil(t, err)
-				n, err := test.Reader(t, r, buf, SYNCFILESZ)
-				assert.Nil(t, err)
-				r.Close()
+				n := sp.Tlength(0)
+				for j := 0; j < NTRIAL; j++ {
+					r, err := fsls[i].OpenReader(fns[i])
+					assert.Nil(t, err)
+					n2, err := test.Reader(t, r, buf, SYNCFILESZ)
+					assert.Nil(t, err)
+					n += n2
+					r.Close()
+				}
 				return n
 			})
 			done <- n
@@ -314,24 +337,29 @@ func TestReadFilePerfMultiClient(t *testing.T) {
 	}
 	ms := time.Since(start).Milliseconds()
 	db.DPrintf(db.ALWAYS, "Total tpt reader: %s took %vms (%s)", humanize.Bytes(uint64(n)), ms, test.TputStr(n, ms))
+	p1.Done()
 	for _, fn := range fns {
 		err := ts.Remove(fn)
 		assert.Nil(ts.T, err)
 		newFile(t, ts.FsLib, fn, HBUF, buf, FILESZ)
 	}
+
 	p2, err := perf.NewPerfMulti(ts.ProcEnv(), perf.BENCH, perf.BUFREADER)
 	assert.Nil(t, err)
-	defer p2.Done()
 	start = time.Now()
 	for i := range fns {
 		go func(i int) {
 			n := measure(p2, "bufreader", func() sp.Tlength {
-				r, err := fsls[i].OpenReader(fns[i])
-				assert.Nil(t, err)
-				br := bufio.NewReaderSize(r, sp.BUFSZ)
-				n, err := test.Reader(t, br, buf, FILESZ)
-				assert.Nil(t, err)
-				r.Close()
+				n := sp.Tlength(0)
+				for j := 0; j < NTRIAL; j++ {
+					r, err := fsls[i].OpenReader(fns[i])
+					assert.Nil(t, err)
+					br := bufio.NewReaderSize(r, sp.BUFSZ)
+					n2, err := test.Reader(t, br, buf, FILESZ)
+					assert.Nil(t, err)
+					n += n2
+					r.Close()
+				}
 				return n
 			})
 			done <- n
@@ -341,20 +369,25 @@ func TestReadFilePerfMultiClient(t *testing.T) {
 	for _ = range fns {
 		n += <-done
 	}
+	p2.Done()
+
 	ms = time.Since(start).Milliseconds()
 	db.DPrintf(db.ALWAYS, "Total tpt bufreader: %s took %vms (%s)", humanize.Bytes(uint64(n)), ms, test.TputStr(n, ms))
 	p3, err := perf.NewPerfMulti(ts.ProcEnv(), perf.BENCH, perf.ABUFREADER)
 	assert.Nil(t, err)
-	defer p3.Done()
 	start = time.Now()
 	for i := range fns {
 		go func(i int) {
 			n := measure(p3, "readabuf", func() sp.Tlength {
-				r, err := fsls[i].OpenAsyncReader(fns[i], 0)
-				assert.Nil(t, err)
-				n, err := test.Reader(t, r, buf, FILESZ)
-				assert.Nil(t, err)
-				r.Close()
+				n := sp.Tlength(0)
+				for j := 0; j < NTRIAL; j++ {
+					r, err := fsls[i].OpenAsyncReader(fns[i], 0)
+					assert.Nil(t, err)
+					n2, err := test.Reader(t, r, buf, FILESZ)
+					assert.Nil(t, err)
+					n += n2
+					r.Close()
+				}
 				return n
 			})
 			done <- n
@@ -364,6 +397,7 @@ func TestReadFilePerfMultiClient(t *testing.T) {
 	for _ = range fns {
 		n += <-done
 	}
+	p3.Done()
 	ms = time.Since(start).Milliseconds()
 	db.DPrintf(db.ALWAYS, "Total tpt abufreader: %s took %vms (%s)", humanize.Bytes(uint64(n)), ms, test.TputStr(n, ms))
 	ts.Shutdown()
@@ -393,7 +427,7 @@ func TestDirCreatePerf(t *testing.T) {
 	ts.Shutdown()
 }
 
-func lookuper(ts *test.Tstate, nclerk int, n int, dir string, nfile int, lip string, nds sp.Taddrs) {
+func lookuper(ts *test.Tstate, nclerk int, n int, dir string, nfile int, lip string) {
 	const NITER = 100 // 10000
 	ch := make(chan bool)
 	for c := 0; c < nclerk; c++ {
@@ -432,7 +466,7 @@ func TestDirReadPerf(t *testing.T) {
 		})
 		return n
 	})
-	lookuper(ts, 1, N, dir, NFILE, ts.GetLocalIP(), ts.NamedAddr())
+	lookuper(ts, 1, N, dir, NFILE, ts.GetLocalIP())
 	//lookuper(t, NCLERK, N, dir, NFILE)
 	err := ts.RmDir(dir)
 	assert.Nil(t, err)
@@ -450,5 +484,87 @@ func TestRmDirPerf(t *testing.T) {
 		assert.Nil(t, err)
 		return N
 	})
+	ts.Shutdown()
+}
+
+func TestLookupDepthPerf(t *testing.T) {
+	const N = 10
+	const NFILE = 10
+	ts := test.NewTstatePath(t, pathname)
+
+	ts.RmDir(gopath.Join(pathname, "d0"))
+
+	for d := 1; d < N; d++ {
+		dir := pathname
+		for i := 0; i < d; i++ {
+			dir = gopath.Join(dir, "d"+strconv.Itoa(i))
+			n := newDir(t, ts.FsLib, dir, NFILE)
+			assert.Equal(t, NFILE, n)
+		}
+		//test.Dump(t)
+		label := fmt.Sprintf("stat dir %v nfile %v", dir, NFILE)
+		measuredir(label, 1000, func() int {
+			_, err := ts.Stat(dir)
+			assert.Nil(t, err)
+			return 1
+		})
+		err := ts.RmDir(gopath.Join(pathname, "d0"))
+		assert.Nil(t, err)
+	}
+	ts.Shutdown()
+}
+
+func TestLookupConcurPerf(t *testing.T) {
+	const N = 1
+	const NFILE = 10
+	const NGO = 10
+	const NTRIAL = 100
+	ts := test.NewTstatePath(t, pathname)
+
+	ts.RmDir(gopath.Join(pathname, "d0"))
+
+	dir := pathname
+	for d := 0; d < N; d++ {
+		dir = gopath.Join(dir, "d"+strconv.Itoa(d))
+		n := newDir(t, ts.FsLib, dir, NFILE)
+		assert.Equal(t, NFILE, n)
+	}
+	ndMnt := ts.GetNamedMount()
+	// dump(t)
+	done := make(chan int)
+	fsls := make([][]*fslib.FsLib, 0, NGO)
+	for i := 0; i < NGO; i++ {
+		fsl2 := make([]*fslib.FsLib, 0, NTRIAL)
+		for j := 0; j < NTRIAL; j++ {
+			pcfg := proc.NewAddedProcEnv(ts.ProcEnv(), i)
+			pcfg.NamedMountProto = &ndMnt
+			fsl, err := fslib.NewFsLib(pcfg)
+			assert.Nil(t, err)
+			fsl2 = append(fsl2, fsl)
+		}
+		fsls = append(fsls, fsl2)
+	}
+
+	for i := 0; i < NGO; i++ {
+		go func(i int) {
+			label := fmt.Sprintf("stat dir %v nfile %v ntrial %v", dir, NFILE, NTRIAL)
+			measuredir(label, 1, func() int {
+				for j := 0; j < NTRIAL; j++ {
+					_, err := fsls[i][j].Stat(dir)
+					assert.Nil(t, err, "stat err %v", err)
+				}
+				return NTRIAL
+			})
+			done <- i
+		}(i)
+	}
+
+	for _ = range fsls {
+		<-done
+	}
+
+	err := ts.RmDir(gopath.Join(pathname, "d0"))
+	assert.Nil(t, err)
+
 	ts.Shutdown()
 }

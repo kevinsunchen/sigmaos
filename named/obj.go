@@ -64,12 +64,18 @@ func (o *Obj) Parent() fs.Dir {
 
 func (o *Obj) Stat(ctx fs.CtxI) (*sp.Stat, *serr.Err) {
 	db.DPrintf(db.NAMED, "Stat: %v\n", o)
-	if o, err := getObj(o.fs, o.pn, o.di.Path, o.parent); err != nil {
-		return nil, err
-	} else {
-		st := o.stat()
-		return st, nil
+
+	// Check that the object is still exists if emphemeral
+	if o.di.Perm.IsEphemeral() || o.di.Nf == nil {
+		if nf, _, err := o.fs.GetFile(o.di.Path); err != nil {
+			db.DPrintf(db.NAMED, "Stat: GetFile %v err %v\n", o, err)
+			return nil, serr.NewErr(serr.TErrNotfound, o.pn.Base())
+		} else {
+			o.di.Nf = nf
+		}
 	}
+	st := o.stat()
+	return st, nil
 }
 
 func (o *Obj) stat() *sp.Stat {
@@ -81,16 +87,7 @@ func (o *Obj) stat() *sp.Stat {
 	return st
 }
 
-func getObj(fs *fsetcd.FsEtcd, pn path.Path, path sp.Tpath, parent sp.Tpath) (*Obj, *serr.Err) {
-	nf, _, err := fs.GetFile(path)
-	if err != nil {
-		return nil, err
-	}
-	o := newObjDi(fs, pn, fsetcd.DirEntInfo{Nf: nf, Perm: nf.Tperm(), Path: path}, parent)
-	return o, nil
-}
-
-func (o *Obj) putObj(f sp.Tfence) *serr.Err {
-	nf := fsetcd.NewEtcdFile(o.di.Perm|0777, o.di.Nf.TclntId(), o.di.Nf.TleaseId(), o.di.Nf.Data)
+func (o *Obj) putObj(f sp.Tfence, data []byte) *serr.Err {
+	nf := fsetcd.NewEtcdFile(o.di.Perm|0777, o.di.Nf.TclntId(), o.di.Nf.TleaseId(), data)
 	return o.fs.PutFile(o.di.Path, nf, f)
 }

@@ -26,21 +26,22 @@ type Watch func(string, error)
 type PathClnt struct {
 	pcfg *proc.ProcEnv
 	*fidclnt.FidClnt
-	mnt     *MntTable
-	rootmt  *RootMountTable
-	chunkSz sp.Tsize
-	realm   sp.Trealm
-	lip     string
-	cid     sp.TclntId
+	ndMntCache *NamedMountCache
+	mnt        *MntTable
+	rootmt     *RootMountTable
+	realm      sp.Trealm
+	lip        string
+	cid        sp.TclntId
 }
 
-func NewPathClnt(pcfg *proc.ProcEnv, fidc *fidclnt.FidClnt, sz sp.Tsize) *PathClnt {
-	pathc := &PathClnt{pcfg: pcfg, mnt: newMntTable(), chunkSz: sz}
+func NewPathClnt(pcfg *proc.ProcEnv, fidc *fidclnt.FidClnt) *PathClnt {
+	pathc := &PathClnt{pcfg: pcfg, mnt: newMntTable()}
 	if fidc == nil {
 		pathc.FidClnt = fidclnt.NewFidClnt(pcfg, pcfg.Net)
 	} else {
 		pathc.FidClnt = fidc
 	}
+	pathc.ndMntCache = NewNamedMountCache(pcfg)
 	pathc.rootmt = newRootMountTable()
 	pathc.cid = sp.TclntId(rand.Uint64())
 	return pathc
@@ -64,22 +65,16 @@ func (pathc *PathClnt) GetLocalIP() string {
 	return pathc.pcfg.LocalIP
 }
 
-func (pathc *PathClnt) SetChunkSz(sz sp.Tsize) {
-	pathc.chunkSz = sz
-}
-
-func (pathc *PathClnt) GetChunkSz() sp.Tsize {
-	return pathc.chunkSz
-}
-
 func (pathc *PathClnt) Mounts() []string {
 	return pathc.mnt.mountedPaths()
 }
 
 func (pathc *PathClnt) MountTree(uname sp.Tuname, addrs sp.Taddrs, tree, mnt string) error {
+	db.DPrintf(db.PATHCLNT, "MountTree [%v]/%v mnt %v", addrs, tree, mnt)
 	if fd, err := pathc.Attach(uname, pathc.cid, addrs, "", tree); err == nil {
 		return pathc.Mount(fd, mnt)
 	} else {
+		db.DPrintf(db.PATHCLNT_ERR, "MountTree Attach [%v]/%v err %v", addrs, tree, err)
 		return err
 	}
 }
@@ -129,8 +124,8 @@ func (pathc *PathClnt) Disconnect(pn string) error {
 	return nil
 }
 
-func (pathc *PathClnt) NewReader(fid sp.Tfid, path string, chunksz sp.Tsize) *reader.Reader {
-	return reader.NewReader(pathc.FidClnt, path, fid, chunksz)
+func (pathc *PathClnt) NewReader(fid sp.Tfid, path string) *reader.Reader {
+	return reader.NewReader(pathc.FidClnt, path, fid)
 }
 
 func (pathc *PathClnt) NewWriter(fid sp.Tfid) *writer.Writer {
@@ -146,7 +141,7 @@ func (pathc *PathClnt) readlink(fid sp.Tfid) ([]byte, *serr.Err) {
 	if err != nil {
 		return nil, err
 	}
-	rdr := reader.NewReader(pathc.FidClnt, "", fid, pathc.chunkSz)
+	rdr := reader.NewReader(pathc.FidClnt, "", fid)
 	b, err := rdr.GetDataErr()
 	if err != nil {
 		return nil, err
@@ -421,7 +416,7 @@ func (pathc *PathClnt) PutFile(pn string, uname sp.Tuname, mode sp.Tmode, perm s
 }
 
 func (pathc *PathClnt) resolve(p path.Path, uname sp.Tuname, resolve bool) (sp.Tfid, path.Path, *serr.Err) {
-	if err, b := pathc.resolveRoot(p, uname); err != nil {
+	if err, b := pathc.resolveRoot(p); err != nil {
 		db.DPrintf(db.ALWAYS, "resolveRoot %v err %v b %v\n", p, err, b)
 	}
 	return pathc.mnt.resolve(p, resolve)

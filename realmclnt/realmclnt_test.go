@@ -142,21 +142,21 @@ func TestBasicMultiRealmMultiNode(t *testing.T) {
 	time.Sleep(2 * sp.Conf.Realm.KERNEL_SRV_REFRESH_INTERVAL)
 	ts2 := test.NewRealmTstate(rootts, REALM2)
 
-	db.DPrintf(db.TEST, "[%v] named addr: %v", REALM1, ts1.NamedAddr())
-	db.DPrintf(db.TEST, "[%v] named addr: %v", REALM2, ts2.NamedAddr())
+	db.DPrintf(db.TEST, "[%v] named addr: %v", REALM1, ts1.GetNamedMount())
+	db.DPrintf(db.TEST, "[%v] named addr: %v", REALM2, ts2.GetNamedMount())
 
 	// Should have a public and private address
 	if test.Overlays {
-		assert.Equal(rootts.T, 2, len(ts1.NamedAddr()))
-		assert.Equal(rootts.T, 2, len(ts1.NamedAddr()))
+		assert.Equal(rootts.T, 2, len(ts1.GetNamedMount().Addr))
+		assert.Equal(rootts.T, 2, len(ts1.GetNamedMount().Addr))
 	}
 
 	schedds1, err := ts1.GetDir(sp.SCHEDD)
-	assert.Nil(t, err)
+	assert.Nil(t, err, "ErrGetDir SCHEDD: %v", err)
 	assert.True(rootts.T, len(schedds1) == 2, "Wrong number schedds %v", schedds1)
 
 	schedds2, err := ts2.GetDir(sp.SCHEDD)
-	assert.Nil(t, err)
+	assert.Nil(t, err, "ErrGetDir SCHEDD: %v", err)
 	assert.True(rootts.T, len(schedds2) == 2, "Wrong number schedds %v", schedds2)
 
 	for i := range schedds1 {
@@ -393,12 +393,12 @@ func TestSpinPerfCalibrate(t *testing.T) {
 
 	db.DPrintf(db.TEST, "Calibrate SigmaOS baseline")
 	// -1 for named
-	ctimeS := calibrateCTimeSigma(ts1, linuxsched.NCores-1, N_ITER)
+	ctimeS := calibrateCTimeSigma(ts1, linuxsched.GetNCores()-1, N_ITER)
 	db.DPrintf(db.TEST, "SigmaOS baseline compute time: %v", ctimeS)
 
 	db.DPrintf(db.TEST, "Calibrate Linux baseline")
 	// -1 for named
-	ctimeL := calibrateCTimeLinux(ts1, linuxsched.NCores-1, N_ITER)
+	ctimeL := calibrateCTimeLinux(ts1, linuxsched.GetNCores()-1, N_ITER)
 	db.DPrintf(db.TEST, "Linux baseline compute time: %v", ctimeL)
 
 	err := ts1.Remove()
@@ -422,12 +422,12 @@ func TestSpinPerfDoubleSlowdown(t *testing.T) {
 
 	db.DPrintf(db.TEST, "Calibrate SigmaOS baseline")
 	// - 2 to account for NAMED reserved cores
-	ctimeS := calibrateCTimeSigma(ts1, linuxsched.NCores-2, N_ITER)
+	ctimeS := calibrateCTimeSigma(ts1, linuxsched.GetNCores()-2, N_ITER)
 	db.DPrintf(db.TEST, "SigmaOS baseline compute time: %v", ctimeS)
 
 	c := make(chan time.Duration)
-	go runSpinPerf(ts1, c, 0, linuxsched.NCores-2, N_ITER, "spin1")
-	go runSpinPerf(ts1, c, 0, linuxsched.NCores-2, N_ITER, "spin2")
+	go runSpinPerf(ts1, c, 0, linuxsched.GetNCores()-2, N_ITER, "spin1")
+	go runSpinPerf(ts1, c, 0, linuxsched.GetNCores()-2, N_ITER, "spin2")
 
 	d1 := <-c
 	d2 := <-c
@@ -455,14 +455,14 @@ func TestSpinPerfDoubleBEandLC(t *testing.T) {
 
 	db.DPrintf(db.TEST, "Calibrate SigmaOS baseline")
 	// - 2 to account for NAMED reserved cores
-	ctimeS := calibrateCTimeSigma(ts1, linuxsched.NCores-2, N_ITER)
+	ctimeS := calibrateCTimeSigma(ts1, linuxsched.GetNCores()-2, N_ITER)
 	db.DPrintf(db.TEST, "SigmaOS baseline compute time: %v", ctimeS)
 
 	beC := make(chan time.Duration)
 	lcC := make(chan time.Duration)
 	// - 2 to account for NAMED reserved cores
-	go runSpinPerf(ts1, lcC, proc.Tmcpu(1000*(linuxsched.NCores-2)), linuxsched.NCores-2, N_ITER, "lcspin")
-	go runSpinPerf(ts1, beC, 0, linuxsched.NCores-2, N_ITER, "bespin")
+	go runSpinPerf(ts1, lcC, proc.Tmcpu(1000*(linuxsched.GetNCores()-2)), linuxsched.GetNCores()-2, N_ITER, "lcspin")
+	go runSpinPerf(ts1, beC, 0, linuxsched.GetNCores()-2, N_ITER, "bespin")
 
 	durBE := <-beC
 	durLC := <-lcC
@@ -494,14 +494,14 @@ func TestSpinPerfDoubleBEandLCMultiRealm(t *testing.T) {
 
 	db.DPrintf(db.TEST, "Calibrate SigmaOS baseline")
 	// - 2 to account for NAMED reserved cores
-	ctimeS := calibrateCTimeSigma(ts1, linuxsched.NCores-2, N_ITER)
+	ctimeS := calibrateCTimeSigma(ts1, linuxsched.GetNCores()-2, N_ITER)
 	db.DPrintf(db.TEST, "SigmaOS baseline compute time: %v", ctimeS)
 
 	beC := make(chan time.Duration)
 	lcC := make(chan time.Duration)
 	// - 2 to account for NAMED reserved cores
-	go runSpinPerf(ts1, lcC, proc.Tmcpu(1000*(linuxsched.NCores-2)), linuxsched.NCores-2, N_ITER, "lcspin")
-	go runSpinPerf(ts2, beC, 0, linuxsched.NCores-2, N_ITER, "bespin")
+	go runSpinPerf(ts1, lcC, proc.Tmcpu(1000*(linuxsched.GetNCores()-2)), linuxsched.GetNCores()-2, N_ITER, "lcspin")
+	go runSpinPerf(ts2, beC, 0, linuxsched.GetNCores()-2, N_ITER, "bespin")
 
 	durBE := <-beC
 	durLC := <-lcC

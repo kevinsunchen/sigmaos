@@ -14,7 +14,6 @@ import (
 	"sigmaos/loadgen"
 	"sigmaos/perf"
 	rd "sigmaos/rand"
-	"sigmaos/scheddclnt"
 	sp "sigmaos/sigmap"
 	sn "sigmaos/socialnetwork"
 	"sigmaos/test"
@@ -37,19 +36,19 @@ var MONGO_URL string
 
 func getDefaultSrvs() []sn.Srv {
 	return []sn.Srv{
-		sn.Srv{"socialnetwork-user", test.Overlays, 1000},
-		sn.Srv{"socialnetwork-graph", test.Overlays, 1000},
-		sn.Srv{"socialnetwork-post", test.Overlays, 1000},
-		sn.Srv{"socialnetwork-timeline", test.Overlays, 1000},
-		sn.Srv{"socialnetwork-home", test.Overlays, 1000},
-		sn.Srv{"socialnetwork-url", test.Overlays, 1000},
-		sn.Srv{"socialnetwork-text", test.Overlays, 1000},
-		sn.Srv{"socialnetwork-compose", test.Overlays, 1000},
-		sn.Srv{"socialnetwork-frontend", test.Overlays, 1000}}
+		sn.Srv{"socialnetwork-user", test.Overlays, 2000},
+		sn.Srv{"socialnetwork-graph", test.Overlays, 2000},
+		sn.Srv{"socialnetwork-post", test.Overlays, 2000},
+		sn.Srv{"socialnetwork-timeline", test.Overlays, 2000},
+		sn.Srv{"socialnetwork-home", test.Overlays, 2000},
+		sn.Srv{"socialnetwork-url", test.Overlays, 2000},
+		sn.Srv{"socialnetwork-text", test.Overlays, 2000},
+		sn.Srv{"socialnetwork-compose", test.Overlays, 2000},
+		sn.Srv{"socialnetwork-frontend", test.Overlays, 2000}}
 }
 
 func init() {
-	flag.StringVar(&MONGO_URL, "mongourl", "172.17.0.3:27017", "Addr of mongo server.")
+	flag.StringVar(&MONGO_URL, "mongourl", "10.10.1.1:4407", "Addr of mongo server.")
 }
 
 type snFn func(wc *sn.WebClnt, r *rand.Rand)
@@ -103,16 +102,6 @@ func NewSocialNetworkJob(
 		ji.snCfg, err = sn.NewConfig(
 			ts.SigmaClnt, ji.job, getDefaultSrvs(), ncache, true, test.Overlays)
 		assert.Nil(ts.Ts.T, err, "Error Make social network job: %v", err)
-		sdc := scheddclnt.NewScheddClnt(ts.SigmaClnt.FsLib)
-		procs := sdc.GetRunningProcs()
-		progs := make(map[string][]string)
-		for sd, ps := range procs {
-			progs[sd] = make([]string, 0, len(ps))
-			for _, p := range ps {
-				progs[sd] = append(progs[sd], p.GetProgram())
-			}
-		}
-		dbg.DPrintf(dbg.TEST, "Running procs:%v", progs)
 	} else {
 		ji.snCfg, err = sn.NewConfig(ts.SigmaClnt, ji.job, nil, 0, false, test.Overlays)
 		p := sn.JobHTTPAddrsPath(ji.job)

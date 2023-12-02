@@ -2,6 +2,7 @@ syntax = "proto3";
 
 option go_package = "sigmaos/proc";
 import "google/protobuf/timestamp.proto";
+import "sigmap/sigmap.proto";
 
 message ProcEnvProto {
   string pidStr = 1;
@@ -25,6 +26,9 @@ message ProcEnvProto {
   int64 partition = 19;
   int32 howInt = 20;
   google.protobuf.Timestamp spawnTimePB = 21;
+  string strace = 22;
+  string scheddIP = 23;
+  Tmount namedMountProto = 24;
 }
 
 message ProcProto {

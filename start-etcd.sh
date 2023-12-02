@@ -17,9 +17,12 @@ fi
 
 docker run -d \
     --name etcd-server \
-    --publish 2379:2379 \
-    --publish 2380:2380 \
     --env ALLOW_NONE_AUTHENTICATION=yes \
+    --publish 3379:2379 \
+    --publish 3380:2380 \
+    --publish 3381:2381 \
+    --publish 3382:2382 \
+    --publish 3383:2383 \
     bitnami/etcd:latest
 
 

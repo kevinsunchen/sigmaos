@@ -11,13 +11,13 @@ usage() {
 UPDATE=""
 TAG=""
 BOOT="named"
-NAMED=":1111"
+NAMED="127.0.0.1"
 DBIP="x.x.x.x"
 MONGOIP="x.x.x.x"
 NET="host"
 KERNELID=""
 OVERLAYS="false"
-PROVIDER="aws"
+PROVIDER="cloudlab"
 RMCPU="0"
 while [[ "$#" -gt 1 ]]; do
   case "$1" in
@@ -106,6 +106,7 @@ KERNELID=$1
 mkdir -p /tmp/sigmaos
 mkdir -p /tmp/sigmaos-bin
 mkdir -p /tmp/sigmaos-perf
+chmod a+w /tmp/sigmaos-perf
 
 # Pull latest docker images
 if ! [ -z "$TAG" ]; then
@@ -147,7 +148,7 @@ CID=$(docker run -dit\
              -e mongoip=${MONGOIP}\
              -e overlays=${OVERLAYS}\
              -e SIGMAPERF=${SIGMAPERF}\
-             -e SIGMANAMED=${SIGMANAMED}\
+             -e SIGMADEBUG=${SIGMADEBUG}\
              -e provider=${PROVIDER}\
              -e reserveMcpu=${RMCPU}\
              sigmaos)

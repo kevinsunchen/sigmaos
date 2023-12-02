@@ -3,12 +3,12 @@ package kernel
 import (
 	"fmt"
 	"os/exec"
-	"path"
 	"syscall"
 
 	"sigmaos/container"
 	db "sigmaos/debug"
 	"sigmaos/fslib"
+	"sigmaos/kernelsubinfo"
 	"sigmaos/port"
 	"sigmaos/proc"
 	"sigmaos/procclnt"
@@ -61,8 +61,6 @@ func (s *Subsystem) Run(how proc.Thow, kernelId, localIP string) error {
 		}
 		s.cmd = cmd
 	} else {
-		realm := sp.Trealm(s.p.Args[0])
-		ptype := proc.ParseTtype(s.p.Args[1])
 		if err := s.NewProc(s.p, proc.HDOCKER, kernelId); err != nil {
 			return err
 		}
@@ -76,7 +74,7 @@ func (s *Subsystem) Run(how proc.Thow, kernelId, localIP string) error {
 			r = &port.Range{FPORT, LPORT}
 			up = r.Fport
 		}
-		c, err := container.StartPContainer(s.p, kernelId, realm, r, up, ptype)
+		c, err := container.StartPContainer(s.p, kernelId, r, up)
 		if err != nil {
 			return err
 		}
@@ -103,7 +101,7 @@ func (ss *Subsystem) AllocPort(p port.Tport) (*port.PortBinding, error) {
 }
 
 func (ss *Subsystem) GetIp(fsl *fslib.FsLib) string {
-	return GetSubsystemInfo(fsl, sp.KPIDS, ss.p.GetPid().String()).Ip
+	return kernelsubinfo.GetSubsystemInfo(fsl, sp.KPIDS, ss.p.GetPid().String()).Ip
 }
 
 // Send SIGTERM to a system.
@@ -135,9 +133,11 @@ func (s *Subsystem) Kill() error {
 }
 
 func (s *Subsystem) Wait() error {
-	db.DPrintf(db.KERNEL, "Wait for %v to terminate\n", s)
+	db.DPrintf(db.KERNEL, "Wait subsystem for %v", s)
+	defer db.DPrintf(db.KERNEL, "Wait subsystem done for %v", s)
 	if s.how == proc.HSCHEDD || s.how == proc.HDOCKER {
 		if !s.waited {
+			db.DPrintf(db.KERNEL, "Wait subsystem via procclnt %v", s)
 			// Only wait if this proc has not been waited for already, since calling
 			// WaitExit twice leads to an error.
 			status, err := s.WaitExitKernelProc(s.p.GetPid(), s.how)
@@ -148,36 +148,14 @@ func (s *Subsystem) Wait() error {
 		}
 		return nil
 	} else {
+		db.DPrintf(db.KERNEL, "Wait subsystem via cmd %v", s)
 		if err := s.cmd.Wait(); err != nil {
 			return err
 		}
 	}
 	if s.container != nil {
+		db.DPrintf(db.KERNEL, "Container shutdown %v", s)
 		return s.container.Shutdown()
 	}
 	return nil
-}
-
-type SubsystemInfo struct {
-	Kpid sp.Tpid
-	Ip   string
-}
-
-func NewSubsystemInfo(kpid sp.Tpid, ip string) *SubsystemInfo {
-	return &SubsystemInfo{kpid, ip}
-}
-
-func RegisterSubsystemInfo(fsl *fslib.FsLib, si *SubsystemInfo) {
-	if err := fsl.PutFileJson(path.Join(proc.PROCDIR, SUBSYSTEM_INFO), 0777, si); err != nil {
-		db.DFatalf("PutFileJson (%v): %v", path.Join(proc.PROCDIR, SUBSYSTEM_INFO), err)
-	}
-}
-
-func GetSubsystemInfo(fsl *fslib.FsLib, kpids string, pid string) *SubsystemInfo {
-	si := &SubsystemInfo{}
-	if err := fsl.GetFileJson(path.Join(kpids, pid, SUBSYSTEM_INFO), si); err != nil {
-		db.DFatalf("Error GetFileJson in subsystem info: %v", err)
-		return nil
-	}
-	return si
 }

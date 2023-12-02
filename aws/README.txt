@@ -13,7 +13,7 @@ To download the sigmaos software on an instance the first time it is being set u
 $ ./setup-instance.sh --vpc vpc-061a1808693a1626a --vm ec2-52-90-134-108.compute-1.amazonaws.com
 
 To update repo:
-$ ./update-rep.py --vpc vpc-061a1808693a1626a
+$ ./update-repo.py --vpc vpc-061a1808693a1626a
 
 ./rmvpc.py removes either an instance or the whole VPC
 $ ./rmvpc.py --vm i-04f877d38a65f1d05 vpc-061a1808693a1626a
@@ -38,7 +38,7 @@ $ ssh -i key-vpc-02f7e3816c4cc8e7f.pem ubuntu@ec2-52-54-107-185.compute-1.amazon
 
 $ hostname
 
-$ cd ulambda
+$ cd sigmaos
 
 $ go test -timeout 0 -v sigmaos/mr -app mr-grep-wiki2G.yml -run MRJOB
 > /tmp/mr.out 2>&1  &

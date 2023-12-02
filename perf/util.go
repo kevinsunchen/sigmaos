@@ -105,6 +105,7 @@ func NewPerf(pcfg *proc.ProcEnv, s Tselector) (*Perf, error) {
 // each realm).
 func NewPerfMulti(pcfg *proc.ProcEnv, s Tselector, s2 string) (*Perf, error) {
 	initLabels(pcfg)
+	db.DPrintf(db.PERF, "Perf tracking selector %v labels %v", s, labels)
 	p := &Perf{}
 	p.selector = s
 	p.utilChan = make(chan bool, 1)
@@ -130,26 +131,32 @@ func NewPerfMulti(pcfg *proc.ProcEnv, s Tselector, s2 string) (*Perf, error) {
 	}
 	// Set up pprof caputre
 	if ok := labels[s+PPROF]; ok {
+		db.DPrintf(db.PERF, "Set up pprof capture")
 		p.setupPprof(basePath + "-pprof.out")
 	}
 	// Set up pprof caputre
 	if ok := labels[s+PPROF_MEM]; ok {
+		db.DPrintf(db.PERF, "Set up pprof mem capture")
 		p.setupPprofMem(basePath + "-pprof-mem.out")
 	}
 	// Set up pprof caputre
 	if ok := labels[s+PPROF_MUTEX]; ok {
+		db.DPrintf(db.PERF, "Set up pprof mutex capture")
 		p.setupPprofMutex(basePath + "-pprof-mutex.out")
 	}
 	// Set up pprof caputre
 	if ok := labels[s+PPROF_BLOCK]; ok {
+		db.DPrintf(db.PERF, "Set up pprof block capture")
 		p.setupPprofBlock(basePath + "-pprof-block.out")
 	}
 	// Set up cpu util capture
 	if ok := labels[s+CPU]; ok {
+		db.DPrintf(db.PERF, "Set up pprof CPU util capture")
 		p.setupCPUUtil(sp.Conf.Perf.CPU_UTIL_SAMPLE_HZ, basePath+"-cpu.out")
 	}
 	// Set up throughput caputre
 	if ok := labels[s+TPT]; ok {
+		db.DPrintf(db.PERF, "Set up pprof tpt capture")
 		p.setupTpt(sp.Conf.Perf.CPU_UTIL_SAMPLE_HZ, basePath+"-tpt.out")
 	}
 	return p, nil
@@ -157,6 +164,11 @@ func NewPerfMulti(pcfg *proc.ProcEnv, s Tselector, s2 string) (*Perf, error) {
 
 // Register that an event has happened with a given instantaneous throughput.
 func (p *Perf) TptTick(tpt float64) {
+	// If we aren't recording throughput, return.
+	if !p.tpt {
+		return
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -164,11 +176,6 @@ func (p *Perf) TptTick(tpt float64) {
 }
 
 func (p *Perf) tptTickL(tpt float64) {
-	// If we aren't recording throughput, return.
-	if !p.tpt {
-		return
-	}
-
 	// If it has been long enough since we started incrementing this slot, seal
 	// it and move to the next slot. In this way, we always expect
 	// len(p.times) == len(p.tpts) - 1
@@ -197,6 +204,7 @@ func (p *Perf) SumTicks() float64 {
 func (p *Perf) Done() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	if p.done == 0 {
 		atomic.StoreUint32(&p.done, 1)
 		p.teardownPprof()
@@ -364,7 +372,6 @@ func (p *Perf) setupCPUUtil(sampleHz int, fpath string) {
 		db.DFatalf("Create util file %v failed %v", fpath, err)
 	}
 	p.utilFile = f
-	// TODO: pre-allocate a large number of entries
 	p.cpuCyclesBusy = make([]float64, 0, 40*sampleHz)
 	p.cpuCyclesTotal = make([]float64, 0, 40*sampleHz)
 	p.cpuUtilPct = make([]float64, 0, 40*sampleHz)
@@ -453,6 +460,8 @@ func (p *Perf) setupPprofBlock(fpath string) {
 // Caller holds lock.
 func (p *Perf) teardownPprof() {
 	if p.pprof {
+		db.DPrintf(db.PERF, "Tear down pprof perf tracker")
+		defer db.DPrintf(db.PERF, "Done Tear down pprof perf tracker")
 		// Avoid double-closing
 		p.pprof = false
 		pprof.StopCPUProfile()
@@ -520,6 +529,7 @@ func (p *Perf) teardownUtil() {
 				db.DFatalf("Error writing to util file: %v", err)
 			}
 		}
+		p.utilFile.Close()
 	}
 }
 
@@ -527,11 +537,13 @@ func (p *Perf) teardownUtil() {
 func (p *Perf) teardownTpt() {
 	if p.tpt {
 		p.tpt = false
-		// Ignore first entry.
+		db.DPrintf(db.PERF, "Tear down tpt perf tracker num entries %v", len(p.times))
+		defer db.DPrintf(db.PERF, "Done Tear down tpt perf tracker")
 		for i := 0; i < len(p.times); i++ {
 			if _, err := p.tptFile.WriteString(fmt.Sprintf("%vus,%f\n", p.times[i].UnixMicro(), p.tpts[i])); err != nil {
 				db.DFatalf("Error writing to tpt file: %v", err)
 			}
 		}
+		p.tptFile.Close()
 	}
 }

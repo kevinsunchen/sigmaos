@@ -1,11 +1,14 @@
 package procclnt
 
 import (
+	"path"
 	"runtime/debug"
+	"time"
 
 	db "sigmaos/debug"
 	"sigmaos/fslib"
 	"sigmaos/proc"
+	"sigmaos/rpc"
 	sp "sigmaos/sigmap"
 )
 
@@ -15,12 +18,17 @@ func NewProcClnt(fsl *fslib.FsLib) *ProcClnt {
 		db.DPrintf(db.PROCCLNT, "Mount %v as %v", fsl.ProcEnv().ProcDir, proc.PROCDIR)
 		fsl.NewRootMount(fsl.ProcEnv().GetUname(), fsl.ProcEnv().ProcDir, proc.PROCDIR)
 	}
-	db.DPrintf(db.PROCCLNT, "Mount %v as %v", fsl.ProcEnv().ParentDir, proc.PARENTDIR)
-	// Mount parentdir. May fail if parent already exited.
-	fsl.NewRootMount(fsl.ProcEnv().GetUname(), fsl.ProcEnv().ParentDir, proc.PARENTDIR)
-	if err := fsl.NewRootMount(fsl.ProcEnv().GetUname(), sp.SCHEDDREL, sp.SCHEDDREL); err != nil {
-		debug.PrintStack()
-		db.DFatalf("error mounting procd err %v\n", err)
+	// If a schedd IP was specified for this proc, mount the RPC file directly.
+	if fsl.ProcEnv().GetScheddIP() != "" {
+		addrs := sp.NewTaddrs([]string{fsl.ProcEnv().GetScheddIP()})
+		pn := path.Join(sp.SCHEDD, fsl.ProcEnv().GetKernelID(), rpc.RPC)
+		db.DPrintf(db.PROCCLNT, "Mount[%v] %v as %v", addrs, rpc.RPC, pn)
+		start := time.Now()
+		err := fsl.MountTree(addrs, rpc.RPC, pn)
+		if err != nil {
+			db.DFatalf("Err MountTree: %v", err)
+		}
+		db.DPrintf(db.SPAWN_LAT, "[%v] MountTree latency: %v", fsl.ProcEnv().GetPID(), time.Since(start))
 	}
 	return newProcClnt(fsl, fsl.ProcEnv().GetPID(), fsl.ProcEnv().GetPrivileged())
 }
