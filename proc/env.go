@@ -18,6 +18,7 @@ import (
 
 // Environment variables for procs (SHOULD NOT BE ADDED TO)
 const (
+	SIGMASTRACE   = "SIGMASTRACE"
 	SIGMADEBUGPID = "SIGMADEBUGPID"
 	SIGMAPERF     = "SIGMAPERF"
 	SIGMADEBUG    = "SIGMADEBUG"
@@ -89,6 +90,7 @@ func NewProcEnv(program string, pid sp.Tpid, realm sp.Trealm, uname sp.Tuname, p
 			BuildTag:     NOT_SET,
 			Net:          NOT_SET,
 			Perf:         os.Getenv(SIGMAPERF),
+			Strace:       os.Getenv(SIGMASTRACE),
 			Debug:        os.Getenv(SIGMADEBUG),
 			UprocdPIDStr: NOT_SET,
 			Privileged:   priv,
@@ -221,6 +223,14 @@ func (pe *ProcEnvProto) SetSpawnTime(t time.Time) {
 
 func (pe *ProcEnvProto) GetSpawnTime() time.Time {
 	return pe.SpawnTimePB.AsTime()
+}
+
+func (pe *ProcEnv) GetNamedMount() (sp.Tmount, bool) {
+	mnt := pe.ProcEnvProto.GetNamedMountProto()
+	if mnt == nil {
+		return sp.Tmount{}, false
+	}
+	return *mnt, true
 }
 
 func (pe *ProcEnv) Marshal() string {

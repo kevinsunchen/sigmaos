@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 
+	//	"time"
+
 	"github.com/klauspost/readahead"
 
 	"sigmaos/awriter"
@@ -49,7 +51,7 @@ func (fl *FsLib) OpenReader(path string) (*reader.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	return fl.NewReader(fd, path, fl.GetChunkSz()), nil
+	return fl.NewReader(fd, path), nil
 }
 
 type Rdr struct {
@@ -114,7 +116,7 @@ func (fl *FsLib) OpenReaderWatch(path string) (*reader.Reader, error) {
 			break
 		}
 	}
-	rdr := fl.NewReader(fd, path, fl.GetChunkSz())
+	rdr := fl.NewReader(fd, path)
 	return rdr, nil
 
 }
@@ -165,7 +167,7 @@ func (fl *FsLib) CreateAsyncWriter(fname string, perm sp.Tperm, mode sp.Tmode) (
 	if err != nil {
 		return nil, err
 	}
-	aw := awriter.NewWriterSize(w, sp.BUFSZ)
+	aw := awriter.NewWriterSize(w, 4, sp.BUFSZ)
 	bw := bufio.NewWriterSize(aw, sp.BUFSZ)
 	return &Wrt{w, aw, bw}, nil
 }
@@ -197,34 +199,44 @@ func (wrt *Wrt) Nbytes() sp.Tlength {
 
 // XXX use reader/writer interfaces
 func (fl *FsLib) CopyFile(src, dst string) error {
-	st, err := fl.Stat(src)
+	//	start := time.Now()
+	//	defer func(t *time.Time) {
+	//		db.DPrintf(db.ALWAYS, "Time reading + writing in copyFile: %v", time.Since(*t))
+	//	}(&start)
+	rdr, err := fl.OpenAsyncReader(src, 0)
 	if err != nil {
 		return err
 	}
-	fdsrc, err := fl.Open(src, sp.OREAD)
+	//	db.DPrintf(db.ALWAYS, "Time openReader: %v", time.Since(start))
+	//	start = time.Now()
+	defer rdr.Close()
+	wrt, err := fl.CreateAsyncWriter(dst, 0777, sp.OWRITE)
 	if err != nil {
 		return err
 	}
-	defer fl.Close(fdsrc)
-	fddst, err := fl.Create(dst, st.Tmode(), sp.OWRITE)
-	if err != nil {
-		return err
-	}
-	defer fl.Close(fddst)
+	//	db.DPrintf(db.ALWAYS, "Time openWriter: %v", time.Since(start))
+	defer wrt.Close()
+	b := make([]byte, sp.BUFSZ)
+	// Set start to ignore opening & closing reader/writer
+	//	start = time.Now()
 	for {
-		b, err := fl.Read(fdsrc, fl.GetChunkSz())
-		if err != nil {
+		//		start := time.Now()
+		n, err := rdr.Read(b)
+		if err != nil && err != io.EOF {
 			return err
 		}
-		if len(b) == 0 {
+		// Nothing left to read
+		if n == 0 {
 			break
 		}
-		n, err := fl.Write(fddst, b)
+		//		db.DPrintf(db.ALWAYS, "Time reading in copyFile: %v", time.Since(start))
+		b2 := b[:n]
+		nn, err := wrt.Write(b2)
 		if err != nil {
 			return err
 		}
-		if n != sp.Tsize(len(b)) {
-			return fmt.Errorf("short write")
+		if nn != n {
+			return fmt.Errorf("short write %v != %v", nn, n)
 		}
 	}
 	return nil

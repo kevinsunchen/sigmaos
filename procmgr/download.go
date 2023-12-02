@@ -21,19 +21,10 @@ func cachePath(realm sp.Trealm, prog string) string {
 	return path.Join(sp.UXBIN, "user", "realms", realm.String(), prog)
 }
 
-func (mgr *ProcMgr) setupUserBinCache(p *proc.Proc) {
-	// Only set up cache dir when we start spawning user procs. By this time, UX
-	// will already be up.
-	if p.IsPrivileged() {
-		return
-	}
-
-	mgr.Lock()
-	defer mgr.Unlock()
-
-	if _, ok := mgr.cachedProcBins[p.GetRealm()]; !ok {
-		mgr.cachedProcBins[p.GetRealm()] = make(map[string]bool)
-		cachePn := path.Dir(cachePath(p.GetRealm(), p.GetProgram()))
+func (mgr *ProcMgr) setupUserBinCacheL(realm sp.Trealm) {
+	if _, ok := mgr.cachedProcBins[realm]; !ok {
+		mgr.cachedProcBins[realm] = make(map[string]bool)
+		cachePn := path.Dir(cachePath(realm, "PROGRAM"))
 		// Make a dir to cache the realm's binaries.
 		if err := mgr.rootsc.MkDir(cachePn, 0777); err != nil && !serr.IsErrCode(err, serr.TErrExists) {
 			db.DFatalf("Error MkDir cache dir [%v]: %v", cachePn, err)
@@ -53,36 +44,38 @@ func (mgr *ProcMgr) downloadProc(p *proc.Proc) {
 		return
 	}
 	// Download the bin from s3, if it isn't already cached locally.
-	if err := mgr.downloadProcBin(p); err != nil {
+	if err := mgr.downloadProcBin(p.GetRealm(), p.GetProgram(), p.GetBuildTag()); err != nil {
 		db.DFatalf("failed to download proc err:%v proc:%v", err, p)
 	}
 }
 
 // Lock to ensure the bin is downloaded only once, even if multiple copies of
 // the proc are starting up on the same schedd.
-func (mgr *ProcMgr) downloadProcBin(p *proc.Proc) error {
+func (mgr *ProcMgr) downloadProcBin(realm sp.Trealm, prog, buildTag string) error {
 	mgr.Lock()
 	defer mgr.Unlock()
 
 	// If already cached, return immediately.
-	if mgr.alreadyCached(p.GetRealm(), p.GetProgram()) {
+	if mgr.alreadyCached(realm, prog) {
 		return nil
 	}
 	commonBins := path.Join(sp.UXBIN, "user", "common")
 	// Search order:
 	// 1. Try to copy from the local bin cache (user bins will be here when built locally).
-	// 2. Try the shared to download from the realm's s3 bucket.
-	// 3. Try the global version repo.
+	// 2. Try the global version repo.
 	paths := []string{
 		commonBins,
-		path.Join(sp.S3, "~local", p.GetRealm().String(), "/bin"),
-		path.Join(sp.S3, "~local", p.GetBuildTag(), "/bin"),
+		path.Join(sp.S3, "~local", buildTag, "/bin"),
+	}
+	// For user bins, go straight to S3 instead of checking locally first.
+	if sp.Target != "local" && prog != "named" && prog != "spawn-latency-ux" {
+		paths = paths[1:]
 	}
 	var err error
 	for _, pp := range paths {
-		db.DPrintf(db.ALWAYS, "Download buildtag %v pp %v prog %v", p.GetBuildTag(), pp, p.GetProgram())
-		if e := mgr.downloadProcPath(p.GetRealm(), pp, p.GetProgram()); e == nil {
-			mgr.cachedProcBins[p.GetRealm()][p.GetProgram()] = true
+		db.DPrintf(db.ALWAYS, "Download buildtag %v pp %v prog %v", buildTag, pp, prog)
+		if e := mgr.downloadProcPath(realm, pp, prog); e == nil {
+			mgr.cachedProcBins[realm][prog] = true
 			return nil
 		} else {
 			err = e
@@ -132,5 +125,6 @@ func (mgr *ProcMgr) tryDownloadProcPath(realm sp.Trealm, from, prog string) erro
 		mgr.rootsc.Remove(tmppath)
 	}
 	db.DPrintf(db.PROCMGR, "Took %v to download proc %v", time.Since(start), src)
+	db.DPrintf(db.SPAWN_LAT, "Took %v to download proc %v", time.Since(start), src)
 	return nil
 }

@@ -23,6 +23,7 @@ import (
 	"sigmaos/sigmaclnt"
 	sp "sigmaos/sigmap"
 	"sigmaos/test"
+	"sigmaos/writer"
 )
 
 type Mapper struct {
@@ -33,13 +34,16 @@ type Mapper struct {
 	nreducetask int
 	linesz      int
 	input       string
+	intOutput   string
 	bin         string
-	wrts        []*fslib.Wrt
+	asyncwrts   []*fslib.Wrt
+	syncwrts    []*writer.Writer
+	pwrts       []*perf.PerfWriter
 	rand        string
 	perf        *perf.Perf
 }
 
-func NewMapper(sc *sigmaclnt.SigmaClnt, mapf MapT, job string, p *perf.Perf, nr, lsz int, input string) (*Mapper, error) {
+func NewMapper(sc *sigmaclnt.SigmaClnt, mapf MapT, job string, p *perf.Perf, nr, lsz int, input, intOutput string) (*Mapper, error) {
 	m := &Mapper{}
 	m.mapf = mapf
 	m.job = job
@@ -47,8 +51,11 @@ func NewMapper(sc *sigmaclnt.SigmaClnt, mapf MapT, job string, p *perf.Perf, nr,
 	m.linesz = lsz
 	m.rand = rand.String(16)
 	m.input = input
+	m.intOutput = intOutput
 	m.bin = path.Base(m.input)
-	m.wrts = make([]*fslib.Wrt, m.nreducetask)
+	m.asyncwrts = make([]*fslib.Wrt, m.nreducetask)
+	m.syncwrts = make([]*writer.Writer, m.nreducetask)
+	m.pwrts = make([]*perf.PerfWriter, m.nreducetask)
 	m.SigmaClnt = sc
 	m.perf = p
 	m.sbc = NewScanByteCounter(p)
@@ -56,14 +63,14 @@ func NewMapper(sc *sigmaclnt.SigmaClnt, mapf MapT, job string, p *perf.Perf, nr,
 }
 
 func newMapper(mapf MapT, args []string, p *perf.Perf) (*Mapper, error) {
-	if len(args) != 4 {
+	if len(args) != 5 {
 		return nil, fmt.Errorf("NewMapper: too few arguments %v", args)
 	}
 	nr, err := strconv.Atoi(args[1])
 	if err != nil {
 		return nil, fmt.Errorf("NewMapper: nreducetask %v isn't int", args[1])
 	}
-	lsz, err := strconv.Atoi(args[3])
+	lsz, err := strconv.Atoi(args[4])
 	if err != nil {
 		return nil, fmt.Errorf("NewMapper: linesz %v isn't int", args[1])
 	}
@@ -71,7 +78,7 @@ func newMapper(mapf MapT, args []string, p *perf.Perf) (*Mapper, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, err := NewMapper(sc, mapf, args[0], p, nr, lsz, args[2])
+	m, err := NewMapper(sc, mapf, args[0], p, nr, lsz, args[2], args[3])
 	if err != nil {
 		return nil, fmt.Errorf("NewMapper failed %v", err)
 	}
@@ -91,25 +98,37 @@ func (m *Mapper) CloseWrt() (sp.Tlength, error) {
 }
 
 func (m *Mapper) InitWrt(r int, name string) error {
-	if wrt, err := m.CreateAsyncWriter(name, 0777, sp.OWRITE); err != nil {
-		return err
+	if MAP_ASYNC_WRITER {
+		if wrt, err := m.CreateAsyncWriter(name, 0777, sp.OWRITE); err != nil {
+			return err
+		} else {
+			m.asyncwrts[r] = wrt
+			m.pwrts[r] = perf.NewPerfWriter(wrt, m.perf)
+		}
 	} else {
-		m.wrts[r] = wrt
+		if wrt, err := m.CreateWriter(name, 0777, sp.OWRITE); err != nil {
+			return err
+		} else {
+			m.syncwrts[r] = wrt
+			m.pwrts[r] = perf.NewPerfWriter(wrt, m.perf)
+		}
 	}
+
 	return nil
 }
 
 func (m *Mapper) initMapper() error {
 	// Make a directory for holding the output files of a map task.  Ignore
 	// error in case it already exits.  XXX who cleans up?
-	m.MkDir(MLOCALDIR, 0777)
-	m.MkDir(LocalOut(m.job), 0777)
-	m.MkDir(Moutdir(m.job, m.bin), 0777)
+	m.MkDir(m.intOutput, 0777)
+	outDirPath := MapIntermediateOutDir(m.job, m.intOutput, m.bin)
+	m.MkDir(path.Dir(outDirPath), 0777) // job dir
+	m.MkDir(outDirPath, 0777)           // mapper dir
 
 	// Create the output files
 	for r := 0; r < m.nreducetask; r++ {
 		// create temp output shard for reducer r
-		oname := mshardfile(m.job, m.bin, r) + m.rand
+		oname := mshardfile(outDirPath, r) + m.rand
 		if err := m.InitWrt(r, oname); err != nil {
 			m.closewrts()
 			return err
@@ -121,11 +140,21 @@ func (m *Mapper) initMapper() error {
 func (m *Mapper) closewrts() (sp.Tlength, error) {
 	n := sp.Tlength(0)
 	for r := 0; r < m.nreducetask; r++ {
-		if m.wrts[r] != nil {
-			if err := m.wrts[r].Close(); err != nil {
-				return 0, err
-			} else {
-				n += m.wrts[r].Nbytes()
+		if MAP_ASYNC_WRITER {
+			if m.asyncwrts[r] != nil {
+				if err := m.asyncwrts[r].Close(); err != nil {
+					return 0, err
+				} else {
+					n += m.asyncwrts[r].Nbytes()
+				}
+			}
+		} else {
+			if m.syncwrts[r] != nil {
+				if err := m.syncwrts[r].Close(); err != nil {
+					return 0, err
+				} else {
+					n += m.syncwrts[r].Nbytes()
+				}
 			}
 		}
 	}
@@ -134,16 +163,18 @@ func (m *Mapper) closewrts() (sp.Tlength, error) {
 
 // Inform reducer where to find map output
 func (m *Mapper) informReducer() error {
-	pn, err := m.ResolveUnions(MLOCALSRV)
+	/// XXX	intermediateDir := sp.UX + "/~local/mr-intermediate"
+	outDirPath := MapIntermediateOutDir(m.job, m.intOutput, m.bin)
+	pn, err := m.ResolveUnions(outDirPath)
 	if err != nil {
-		return fmt.Errorf("%v: ResolveUnion %v err %v\n", m.ProcEnv().GetPID(), MLOCALSRV, err)
+		return fmt.Errorf("%v: ResolveUnion %v err %v\n", m.ProcEnv().GetPID(), outDirPath, err)
 	}
 	for r := 0; r < m.nreducetask; r++ {
-		fn := mshardfile(m.job, m.bin, r)
-		err = m.Rename(fn+m.rand, fn)
-		if err != nil {
-			return fmt.Errorf("%v: rename %v -> %v err %v\n", m.ProcEnv().GetPID(), fn+m.rand, fn, err)
-		}
+		fn := mshardfile(pn, r) + m.rand
+		//		err = m.Rename(fn+m.rand, fn)
+		//		if err != nil {
+		//			return fmt.Errorf("%v: rename %v -> %v err %v\n", m.ProcEnv().GetPID(), fn+m.rand, fn, err)
+		//		}
 
 		name := symname(m.job, strconv.Itoa(r), m.bin)
 
@@ -157,7 +188,7 @@ func (m *Mapper) informReducer() error {
 		// the symlink if we want to avoid the failing case.
 		m.Remove(name)
 
-		target := shardtarget(m.job, pn, m.bin, r)
+		target := fn + "/"
 
 		db.DPrintf(db.MR, "name %s target %s\n", name, target)
 
@@ -171,8 +202,12 @@ func (m *Mapper) informReducer() error {
 
 func (m *Mapper) emit(kv *KeyValue) error {
 	r := Khash(kv.Key) % m.nreducetask
-	n, err := encodeKV(m.wrts[r], kv.Key, kv.Value, r)
-	m.perf.TptTick(float64(n))
+	var err error
+	if MAP_ASYNC_WRITER {
+		_, err = encodeKV(m.asyncwrts[r], kv.Key, kv.Value, r)
+	} else {
+		_, err = encodeKV(m.syncwrts[r], kv.Key, kv.Value, r)
+	}
 	return err
 }
 
@@ -268,7 +303,7 @@ func RunMapper(mapf MapT, args []string) {
 		db.DFatalf("NewPerf err %v\n", err)
 	}
 	defer p.Done()
-
+	db.DPrintf(db.BENCH, "Mapper [%v] spawn latency: %v", args[2], time.Since(pcfg.GetSpawnTime()))
 	m, err := newMapper(mapf, args, p)
 	if err != nil {
 		db.DFatalf("%v: error %v", os.Args[0], err)

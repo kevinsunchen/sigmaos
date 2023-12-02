@@ -6,6 +6,7 @@ import (
 
 	db "sigmaos/debug"
 	"sigmaos/fslib"
+	"sigmaos/rand"
 	"sigmaos/rpcclnt"
 	"sigmaos/serr"
 	sp "sigmaos/sigmap"
@@ -14,12 +15,13 @@ import (
 type UnionRPCClnt struct {
 	*fslib.FsLib
 	sync.Mutex
-	path      string
-	clnts     map[string]*rpcclnt.RPCClnt
-	srvs      []string
-	rrOffset  int
-	lSelector db.Tselector
-	eSelector db.Tselector
+	monitoring bool
+	path       string
+	clnts      map[string]*rpcclnt.RPCClnt
+	srvs       []string
+	rrOffset   int
+	lSelector  db.Tselector
+	eSelector  db.Tselector
 }
 
 func NewUnionRPCClnt(fsl *fslib.FsLib, path string, lSelector db.Tselector, eSelector db.Tselector) *UnionRPCClnt {
@@ -31,7 +33,6 @@ func NewUnionRPCClnt(fsl *fslib.FsLib, path string, lSelector db.Tselector, eSel
 		lSelector: lSelector,
 		eSelector: eSelector,
 	}
-	go u.monitorSrvs()
 	return u
 }
 
@@ -65,6 +66,11 @@ func (urpcc *UnionRPCClnt) GetClnt(srvID string) (*rpcclnt.RPCClnt, error) {
 func (urpcc *UnionRPCClnt) UpdateSrvs(force bool) {
 	urpcc.Lock()
 	defer urpcc.Unlock()
+
+	if !urpcc.monitoring {
+		go urpcc.monitorSrvs()
+		urpcc.monitoring = true
+	}
 
 	// If the caller is not forcing an update, and the list of servers has
 	// already been populated, do nothing and return.
@@ -114,6 +120,18 @@ func (urpcc *UnionRPCClnt) NextSrv() (string, error) {
 
 	srvID := urpcc.srvs[urpcc.rrOffset%len(urpcc.srvs)]
 	urpcc.rrOffset++
+	return srvID, nil
+}
+
+// Get the next server, randomly.
+func (urpcc *UnionRPCClnt) RandomSrv() (string, error) {
+	urpcc.Lock()
+	defer urpcc.Unlock()
+
+	if len(urpcc.srvs) == 0 {
+		return "", serr.NewErr(serr.TErrNotfound, "no srvs to spawn on")
+	}
+	srvID := urpcc.srvs[rand.Int64(int64(len(urpcc.srvs)))]
 	return srvID, nil
 }
 

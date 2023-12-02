@@ -30,7 +30,7 @@ func (t Ttype) String() string {
 	case T_LC:
 		return "T_LC"
 	default:
-		log.Fatalf("Unknown proc type: %v", t)
+		log.Fatalf("FATAL Unknown proc type: %v", int(t))
 	}
 	return ""
 }
@@ -134,14 +134,14 @@ func (p *Proc) IsPrivileged() bool {
 }
 
 func (p *Proc) String() string {
-	return fmt.Sprintf("&{ Program:%v Pid:%v Priv:%t KernelId:%v Realm:%v ProcDir:%v ParentDir:%v Args:%v Env:%v Type:%v Mcpu:%v Mem:%v }",
+	return fmt.Sprintf("&{ Program:%v Pid:%v Tag: %v Priv:%t KernelId:%v Realm:%v Perf:%v Args:%v Env:%v Type:%v Mcpu:%v Mem:%v }",
 		p.ProcEnvProto.Program,
 		p.ProcEnvProto.GetPID(),
+		p.ProcEnvProto.GetBuildTag(),
 		p.ProcEnvProto.Privileged,
 		p.ProcEnvProto.KernelID,
 		p.ProcEnvProto.GetRealm(),
-		p.ProcEnvProto.ProcDir,
-		p.ProcEnvProto.ParentDir,
+		p.ProcEnvProto.GetPerf(),
 		p.Args,
 		p.GetEnv(),
 		p.GetType(),
@@ -266,6 +266,16 @@ func (p *Proc) SetHow(n Thow) {
 
 func (p *Proc) GetHow() Thow {
 	return p.ProcEnvProto.GetHow()
+}
+
+func (p *Proc) SetScheddIP(ip string) {
+	p.ProcEnvProto.ScheddIP = ip
+}
+
+func (p *Proc) SetNamedMount(mnt sp.Tmount) {
+	m2 := &sp.Tmount{}
+	*m2 = mnt
+	p.ProcEnvProto.NamedMountProto = m2
 }
 
 // Return Env map as a []string

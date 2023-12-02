@@ -26,6 +26,28 @@ func NewProcState() *ProcState {
 	}
 }
 
+func (ps *ProcState) GetProcs() []*proc.Proc {
+	ps.Lock()
+	defer ps.Unlock()
+
+	procs := make([]*proc.Proc, 0, len(ps.spawned))
+	for _, p := range ps.spawned {
+		procs = append(procs, p)
+	}
+	return procs
+}
+
+func (ps *ProcState) Lookup(n string) (*proc.Proc, bool) {
+	if p, ok := ps.spawned[sp.Tpid(n)]; ok {
+		return p, ok
+	}
+	return nil, false
+}
+
+func (ps *ProcState) Len() int {
+	return len(ps.spawned)
+}
+
 func (ps *ProcState) spawn(p *proc.Proc) {
 	ps.Lock()
 	defer ps.Unlock()
@@ -77,7 +99,7 @@ func (ps *ProcState) waitEvict(pid sp.Tpid) {
 
 // May be called multiple times by procmgr if, for example, the proc crashes
 // shortly after calling Exited().
-func (ps *ProcState) exited(pid sp.Tpid, status *proc.Status) {
+func (ps *ProcState) exited(pid sp.Tpid, status []byte) {
 	ps.Lock()
 	defer ps.Unlock()
 
@@ -96,7 +118,7 @@ func (ps *ProcState) exited(pid sp.Tpid, status *proc.Status) {
 	delete(ps.exitWaiter, pid)
 }
 
-func (ps *ProcState) waitExit(pid sp.Tpid) *proc.Status {
+func (ps *ProcState) waitExit(pid sp.Tpid) []byte {
 	ps.Lock()
 	defer ps.Unlock()
 

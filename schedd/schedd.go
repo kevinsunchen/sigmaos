@@ -3,6 +3,8 @@ package schedd
 import (
 	"path"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	db "sigmaos/debug"
 	"sigmaos/fs"
@@ -23,26 +25,30 @@ import (
 )
 
 type Schedd struct {
-	mu         sync.Mutex
-	cond       *sync.Cond
-	pmgr       *procmgr.ProcMgr
-	scheddclnt *scheddclnt.ScheddClnt
-	procqclnt  *procqclnt.ProcQClnt
-	mcpufree   proc.Tmcpu
-	memfree    proc.Tmem
-	kernelId   string
-	realms     []sp.Trealm
-	mfs        *memfssrv.MemFs
+	realmMu             sync.RWMutex
+	mu                  sync.Mutex
+	cond                *sync.Cond
+	pmgr                *procmgr.ProcMgr
+	scheddclnt          *scheddclnt.ScheddClnt
+	procqclnt           *procqclnt.ProcQClnt
+	mcpufree            proc.Tmcpu
+	memfree             proc.Tmem
+	kernelId            string
+	scheddStats         map[sp.Trealm]*proto.RealmStats
+	mfs                 *memfssrv.MemFs
+	nProcsRun           uint64
+	nProcGets           uint64
+	nProcGetsSuccessful uint64
 }
 
 func NewSchedd(mfs *memfssrv.MemFs, kernelId string, reserveMcpu uint) *Schedd {
 	sd := &Schedd{
-		pmgr:     procmgr.NewProcMgr(mfs, kernelId),
-		realms:   make([]sp.Trealm, 0),
-		mcpufree: proc.Tmcpu(1000*linuxsched.GetNCores() - reserveMcpu),
-		memfree:  mem.GetTotalMem(),
-		kernelId: kernelId,
-		mfs:      mfs,
+		pmgr:        procmgr.NewProcMgr(mfs, kernelId),
+		scheddStats: make(map[sp.Trealm]*proto.RealmStats),
+		mcpufree:    proc.Tmcpu(1000*linuxsched.GetNCores() - reserveMcpu),
+		memfree:     mem.GetTotalMem(),
+		kernelId:    kernelId,
+		mfs:         mfs,
 	}
 	sd.cond = sync.NewCond(&sd.mu)
 	sd.scheddclnt = scheddclnt.NewScheddClnt(mfs.SigmaClnt().FsLib)
@@ -50,11 +56,32 @@ func NewSchedd(mfs *memfssrv.MemFs, kernelId string, reserveMcpu uint) *Schedd {
 	return sd
 }
 
+// Warm the cache of proc binaries.
+func (sd *Schedd) WarmCacheBin(ctx fs.CtxI, req proto.WarmCacheBinRequest, res *proto.WarmCacheBinResponse) error {
+	if err := sd.pmgr.DownloadProcBin(sp.Trealm(req.RealmStr), req.Program, req.BuildTag, proc.Ttype(req.ProcType)); err != nil {
+		db.DFatalf("Error Download Proc Bin: %v", err)
+		res.OK = false
+		return err
+	}
+	res.OK = true
+	return nil
+}
+
 func (sd *Schedd) ForceRun(ctx fs.CtxI, req proto.ForceRunRequest, res *proto.ForceRunResponse) error {
+	atomic.AddUint64(&sd.nProcsRun, 1)
 	p := proc.NewProcFromProto(req.ProcProto)
-	db.DPrintf(db.SCHEDD, "[%v] %v ForceRun %v", p.GetRealm(), sd.kernelId, p)
+	// If this proc's memory has not been accounted for (it was not spawned via
+	// the ProcQ), account for it.
+	if !req.MemAccountedFor {
+		sd.allocMem(p.GetMem())
+	}
+	sd.incRealmStats(p)
+	db.DPrintf(db.SCHEDD, "[%v] %v ForceRun %v", p.GetRealm(), sd.kernelId, p.GetPid())
+	start := time.Now()
 	// Run the proc
 	sd.spawnAndRunProc(p)
+	db.DPrintf(db.SPAWN_LAT, "[%v] Schedd.ForceRun internal latency: %v", p.GetPid(), time.Since(start))
+	db.DPrintf(db.SCHEDD, "[%v] %v ForceRun done %v", p.GetRealm(), sd.kernelId, p.GetPid())
 	return nil
 }
 
@@ -69,7 +96,9 @@ func (sd *Schedd) WaitStart(ctx fs.CtxI, req proto.WaitRequest, res *proto.WaitR
 // Wait for a proc to mark itself as started.
 func (sd *Schedd) Started(ctx fs.CtxI, req proto.NotifyRequest, res *proto.NotifyResponse) error {
 	db.DPrintf(db.SCHEDD, "Started %v", req.PidStr)
+	start := time.Now()
 	sd.pmgr.Started(sp.Tpid(req.PidStr))
+	db.DPrintf(db.SPAWN_LAT, "[%v] Schedd.Started internal latency: %v", req.PidStr, time.Since(start))
 	return nil
 }
 
@@ -91,8 +120,7 @@ func (sd *Schedd) Evict(ctx fs.CtxI, req proto.NotifyRequest, res *proto.NotifyR
 // Wait for a proc to mark itself as exited.
 func (sd *Schedd) WaitExit(ctx fs.CtxI, req proto.WaitRequest, res *proto.WaitResponse) error {
 	db.DPrintf(db.SCHEDD, "WaitExit %v", req.PidStr)
-	status := sd.pmgr.WaitExit(sp.Tpid(req.PidStr))
-	res.Status = status.Marshal()
+	res.Status = sd.pmgr.WaitExit(sp.Tpid(req.PidStr))
 	db.DPrintf(db.SCHEDD, "WaitExit done %v", req.PidStr)
 	return nil
 }
@@ -100,8 +128,7 @@ func (sd *Schedd) WaitExit(ctx fs.CtxI, req proto.WaitRequest, res *proto.WaitRe
 // Wait for a proc to mark itself as exited.
 func (sd *Schedd) Exited(ctx fs.CtxI, req proto.NotifyRequest, res *proto.NotifyResponse) error {
 	db.DPrintf(db.SCHEDD, "Exited %v", req.PidStr)
-	status := proc.NewStatusFromBytes(req.Status)
-	sd.pmgr.Exited(sp.Tpid(req.PidStr), status)
+	sd.pmgr.Exited(sp.Tpid(req.PidStr), req.Status)
 	return nil
 }
 
@@ -125,58 +152,107 @@ func (sd *Schedd) GetCPUUtil(ctx fs.CtxI, req proto.GetCPUUtilRequest, res *prot
 	return nil
 }
 
-func (sd *Schedd) getQueuedProcs() {
-	for {
-		// TODO: Switch to only BE procs...
-		if sd.shouldGetProc() {
+func (sd *Schedd) GetScheddStats(ctx fs.CtxI, req proto.GetScheddStatsRequest, res *proto.GetScheddStatsResponse) error {
+	scheddStats := make(map[string]*proto.RealmStats)
+	sd.realmMu.RLock()
+	for r, s := range sd.scheddStats {
+		st := &proto.RealmStats{
+			Running:  atomic.LoadInt64(&s.Running),
+			TotalRan: atomic.LoadInt64(&s.TotalRan),
 		}
-		db.DPrintf(db.SCHEDD, "[%v] Try get proc from procq", sd.kernelId)
-		// Try to get a proc from the proc queue.
-		ok, err := sd.procqclnt.GetProc(sd.kernelId)
-		if err != nil {
-			db.DPrintf(db.SCHEDD_ERR, "Error GetProc: %v", err)
-			continue
-		}
-		if !ok {
-			db.DPrintf(db.SCHEDD, "[%v] No proc on procq, try another", sd.kernelId)
-			continue
-		}
-		db.DPrintf(db.SCHEDD, "[%v] Got proc from procq", sd.kernelId)
+		scheddStats[r.String()] = st
 	}
-}
-
-func (sd *Schedd) procDone(p *proc.Proc) error {
-	sd.mu.Lock()
-	defer sd.mu.Unlock()
-
-	db.DPrintf(db.SCHEDD, "Proc done %v", p)
-	// Signal that a new proc may be runnable.
-	sd.cond.Signal()
+	sd.realmMu.RUnlock()
+	res.ScheddStats = scheddStats
 	return nil
 }
 
-func (sd *Schedd) spawnAndRunProc(p *proc.Proc) {
-	sd.mu.Lock()
-	defer sd.mu.Unlock()
+// For resource accounting purposes, it is assumed that only one getQueuedProcs
+// thread runs per schedd.
+func (sd *Schedd) getQueuedProcs() {
+	// If true, bias choice of procq to this schedd's kernel.
+	var bias bool = true
+	for {
+		memFree, ok := sd.shouldGetProc()
+		if !ok {
+			db.DPrintf(db.SCHEDD, "[%v] Waiting for more mem", sd.kernelId, bias)
+			// If no memory is available, wait for some more.
+			sd.waitForMoreMem()
+			db.DPrintf(db.SCHEDD, "[%v] Waiting for mem done", sd.kernelId, bias)
+			continue
+		}
+		db.DPrintf(db.SCHEDD, "[%v] Try GetProc mem=%v bias=%v", sd.kernelId, memFree, bias)
+		start := time.Now()
+		// Try to get a proc from the proc queue.
+		procMem, qlen, ok, err := sd.procqclnt.GetProc(sd.kernelId, memFree, bias)
+		db.DPrintf(db.SCHEDD, "[%v] GetProc result procMem %v qlen %v ok %v", sd.kernelId, procMem, qlen, ok)
+		db.DPrintf(db.SPAWN_LAT, "GetProc latency: %v", time.Since(start))
+		if err != nil {
+			db.DPrintf(db.SCHEDD_ERR, "Error GetProc: %v", err)
+			// If previously biased to this schedd's kernel, and GetProc returned an
+			// error, then un-bias.
+			//
+			// If not biased to this schedd's kernel, and GetProc returned an error,
+			// then bias on the next attempt.
+			if bias {
+				bias = false
+			} else {
+				bias = true
+			}
+			continue
+		}
+		atomic.AddUint64(&sd.nProcGets, 1)
+		if !ok {
+			db.DPrintf(db.SCHEDD, "[%v] No proc on procq, try another, bias=%v qlen=%v", sd.kernelId, bias, qlen)
+			// If already biased to this schedd's kernel, and no proc was available,
+			// try another.
+			//
+			// If not biased to this schedd's kernel, and no proc was available, then
+			// bias on the next attempt.
+			if bias {
+				bias = false
+			} else {
+				bias = true
+			}
+			continue
+		}
+		// Restore bias if successful (since getProc may have been unbiased and led
+		// to a successful claim before)
+		bias = true
+		atomic.AddUint64(&sd.nProcGetsSuccessful, 1)
+		// Allocate memory for the proc before this loop runs again so that
+		// subsequent getProc requests carry the updated memory accounting
+		// information.
+		sd.allocMem(procMem)
+		db.DPrintf(db.SCHEDD, "[%v] Got proc from procq, bias=%v", sd.kernelId, bias)
+	}
+}
 
+func (sd *Schedd) procDone(p *proc.Proc) {
+	db.DPrintf(db.SCHEDD, "Proc done %v", p)
+	// Free any mem the proc was using.
+	sd.freeMem(p.GetMem())
+}
+
+func (sd *Schedd) spawnAndRunProc(p *proc.Proc) {
 	p.SetKernelID(sd.kernelId, false)
 	sd.pmgr.Spawn(p)
 	// Run the proc
-	sd.runProcL(p)
+	go sd.runProc(p)
 }
 
 // Run a proc via the local procd. Caller holds lock.
-func (sd *Schedd) runProcL(p *proc.Proc) {
-	db.DPrintf(db.SCHEDD, "[%v] %v runProcL %v", p.GetRealm(), sd.kernelId, p)
-	go func() {
-		sd.pmgr.RunProc(p)
-		sd.procDone(p)
-	}()
+func (sd *Schedd) runProc(p *proc.Proc) {
+	defer sd.decRealmStats(p)
+	db.DPrintf(db.SCHEDD, "[%v] %v runProc %v", p.GetRealm(), sd.kernelId, p)
+	sd.pmgr.RunProc(p)
+	sd.procDone(p)
 }
 
-func (sd *Schedd) shouldGetProc() bool {
-	// TODO: check local resource utilization
-	return true
+// We should always take a free proc if there is memory available.
+func (sd *Schedd) shouldGetProc() (proc.Tmem, bool) {
+	mem := sd.getFreeMem()
+	return mem, mem > 0
 }
 
 func (sd *Schedd) register() {
@@ -195,6 +271,16 @@ func (sd *Schedd) register() {
 	}
 }
 
+func (sd *Schedd) stats() {
+	if !db.WillBePrinted(db.SCHEDD) {
+		return
+	}
+	for {
+		time.Sleep(time.Second)
+		db.DPrintf(db.ALWAYS, "nget %v successful %v", atomic.LoadUint64(&sd.nProcGets), atomic.LoadUint64(&sd.nProcGetsSuccessful))
+	}
+}
+
 func RunSchedd(kernelId string, reserveMcpu uint) error {
 	pcfg := proc.GetProcEnv()
 	mfs, err := memfssrv.NewMemFs(path.Join(sp.SCHEDD, kernelId), pcfg)
@@ -206,15 +292,16 @@ func RunSchedd(kernelId string, reserveMcpu uint) error {
 	if err != nil {
 		db.DFatalf("Error PDS: %v", err)
 	}
-	setupMemFsSrv(ssrv.MemFs)
-	setupFs(ssrv.MemFs)
+	sd.pmgr.SetupFs(ssrv.MemFs)
 	// Perf monitoring
 	p, err := perf.NewPerf(pcfg, perf.SCHEDD)
 	if err != nil {
 		db.DFatalf("Error NewPerf: %v", err)
 	}
+	db.DPrintf(db.ALWAYS, "Schedd starting with total mem: %v", mem.GetTotalMem())
 	defer p.Done()
 	go sd.getQueuedProcs()
+	go sd.stats()
 	sd.register()
 	ssrv.RunServer()
 	return nil

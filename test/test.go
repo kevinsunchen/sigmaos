@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"sigmaos/bootkernelclnt"
-	"sigmaos/container"
 	db "sigmaos/debug"
+	"sigmaos/fsetcd"
+	"sigmaos/netsigma"
+	"sigmaos/path"
 	"sigmaos/proc"
 	"sigmaos/realmclnt"
 	"sigmaos/sigmaclnt"
@@ -102,7 +106,7 @@ func newSysClntPath(t *testing.T, path string) (*Tstate, error) {
 }
 
 func newSysClnt(t *testing.T, srvs string) (*Tstate, error) {
-	localIP, err1 := container.LocalIP()
+	localIP, err1 := netsigma.LocalIP()
 	if err1 != nil {
 		db.DFatalf("Error local IP: %v", err1)
 	}
@@ -184,4 +188,14 @@ func (ts *Tstate) Shutdown() error {
 		}
 	}
 	return nil
+}
+
+func Dump(t *testing.T) {
+	pcfg := proc.NewTestProcEnv(sp.ROOTREALM, EtcdIP, "", "", false)
+	fs, err := fsetcd.NewFsEtcd(pcfg.GetRealm(), pcfg.GetEtcdIP())
+	assert.Nil(t, err)
+	nd, err := fs.ReadDir(fsetcd.ROOT)
+	assert.Nil(t, err)
+	err = fs.Dump(0, nd, path.Path{}, fsetcd.ROOT)
+	assert.Nil(t, err)
 }

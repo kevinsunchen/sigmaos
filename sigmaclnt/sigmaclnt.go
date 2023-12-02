@@ -47,11 +47,15 @@ func NewSigmaClntFsLib(pcfg *proc.ProcEnv) (*SigmaClnt, error) {
 }
 
 func NewSigmaClnt(pcfg *proc.ProcEnv) (*SigmaClnt, error) {
+	start := time.Now()
 	sc, err := NewSigmaClntFsLib(pcfg)
 	if err != nil {
 		db.DFatalf("NewSigmaClnt: %v", err)
 	}
+	db.DPrintf(db.SPAWN_LAT, "[%v] Make FsLib: %v", pcfg.GetPID(), time.Since(start))
+	start = time.Now()
 	sc.ProcClnt = procclnt.NewProcClnt(sc.FsLib)
+	db.DPrintf(db.SPAWN_LAT, "[%v] Make ProcClnt: %v", pcfg.GetPID(), time.Since(start))
 	return sc, nil
 }
 
@@ -68,9 +72,12 @@ func NewSigmaClntRootInit(pcfg *proc.ProcEnv) (*SigmaClnt, error) {
 
 func (sc *SigmaClnt) ClntExit(status *proc.Status) error {
 	sc.ProcClnt.Exited(status)
+	db.DPrintf(db.SIGMACLNT, "Exited done")
 	if sc.LeaseClnt != nil {
 		sc.LeaseClnt.EndLeases()
 	}
+	db.DPrintf(db.SIGMACLNT, "EndLeases done")
+	defer db.DPrintf(db.SIGMACLNT, "ClntExit done")
 	return sc.FsLib.DetachAll()
 }
 

@@ -3,9 +3,9 @@ package main
 import (
 	"os"
 	"sigmaos/boot"
-	"sigmaos/container"
 	db "sigmaos/debug"
 	"sigmaos/kernel"
+	"sigmaos/netsigma"
 	"sigmaos/proc"
 	sp "sigmaos/sigmap"
 	"strconv"
@@ -16,6 +16,7 @@ func main() {
 	if len(os.Args) < 8 {
 		db.DFatalf("usage: %v kernelid srvs nameds dbip mongoip overlays reserveMcpu\n", os.Args[0])
 	}
+	db.DPrintf(db.BOOT, "Boot %v", os.Args[1:])
 	srvs := strings.Split(os.Args[3], ";")
 	overlays, err := strconv.ParseBool(os.Args[6])
 	if err != nil {
@@ -35,7 +36,7 @@ func main() {
 	h := sp.SIGMAHOME
 	p := os.Getenv("PATH")
 	os.Setenv("PATH", p+":"+h+"/bin/kernel:"+h+"/bin/linux:"+h+"/bin/user")
-	localIP, err1 := container.LocalIP()
+	localIP, err1 := netsigma.LocalIP()
 	if err1 != nil {
 		db.DFatalf("Error local IP: %v", err1)
 	}

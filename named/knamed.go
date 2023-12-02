@@ -6,6 +6,7 @@ import (
 	"os"
 
 	db "sigmaos/debug"
+	"sigmaos/perf"
 	"sigmaos/proc"
 	"sigmaos/sigmaclnt"
 	sp "sigmaos/sigmap"
@@ -19,6 +20,12 @@ func RunKNamed(args []string) error {
 	}
 	nd := &Named{}
 	nd.realm = sp.Trealm(args[1])
+
+	p, err := perf.NewPerf(pcfg, perf.KNAMED)
+	if err != nil {
+		db.DFatalf("Error NewPerf: %v", err)
+	}
+	defer p.Done()
 
 	sc, err := sigmaclnt.NewSigmaClntFsLib(pcfg)
 	if err != nil {
@@ -50,6 +57,8 @@ func RunKNamed(args []string) error {
 		db.DFatalf("Error newSrv %v\n", err)
 	}
 
+	db.DPrintf(db.NAMED, "newSrv %v mnt %v", nd.realm, mnt)
+
 	if err := nd.fs.SetRootNamed(mnt); err != nil {
 		db.DFatalf("SetNamed: %v", err)
 	}
@@ -74,7 +83,7 @@ func RunKNamed(args []string) error {
 	return nil
 }
 
-var InitRootDir = []string{sp.BOOT, sp.KPIDS, sp.LCSCHED, sp.PROCQ, sp.SCHEDD, sp.UX, sp.S3, sp.DB, sp.MONGO}
+var InitRootDir = []string{sp.BOOT, sp.KPIDS, sp.LCSCHED, sp.PROCQ, sp.SCHEDD, sp.UX, sp.S3, sp.DB, sp.MONGO, sp.REALM}
 
 // If initial root dir doesn't exist, create it.
 func (nd *Named) initfs() error {

@@ -13,6 +13,8 @@ const (
 	RAND_SEED = 12345
 )
 
+// Return true if external duration should be ignored (and favored by internal
+// duration).
 type Req func(*rand.Rand) (time.Duration, bool)
 
 type LoadGenerator struct {
@@ -132,8 +134,8 @@ func (lg *LoadGenerator) Stats() {
 	// Print raw latencies.
 	db.DPrintf(db.LOADGEN, "Load generator latencies:\n%v", lg.res)
 	lsum, tsum := lg.res.Summary()
-	db.DPrintf(db.THROUGHPUT, tsum)
-	db.DPrintf(db.ALWAYS, lsum)
+	db.DPrintf(db.THROUGHPUT, "\n\nmaxrps:%v%v\n", lg.maxrps, tsum)
+	db.DPrintf(db.ALWAYS, "maxrps:%v%v\n", lg.maxrps, lsum)
 }
 
 func (lg *LoadGenerator) Run() {

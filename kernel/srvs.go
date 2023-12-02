@@ -3,7 +3,6 @@ package kernel
 import (
 	"fmt"
 	"path"
-	"sync"
 
 	db "sigmaos/debug"
 	"sigmaos/port"
@@ -12,7 +11,6 @@ import (
 )
 
 type Services struct {
-	sync.Mutex
 	svcs   map[string][]*Subsystem
 	svcMap map[sp.Tpid]*Subsystem
 }
@@ -25,13 +23,18 @@ func newServices() *Services {
 }
 
 func (ss *Services) addSvc(s string, sub *Subsystem) {
-	ss.Lock()
-	defer ss.Unlock()
 	ss.svcs[s] = append(ss.svcs[s], sub)
 	ss.svcMap[sub.p.GetPid()] = sub
 }
 
 func (k *Kernel) BootSub(s string, args []string, p *Param, full bool) (sp.Tpid, error) {
+	k.Lock()
+	defer k.Unlock()
+
+	if k.shuttingDown {
+		return sp.Tpid(""), fmt.Errorf("Shutting down")
+	}
+
 	var err error
 	var ss *Subsystem
 	switch s {
@@ -113,8 +116,6 @@ func (k *Kernel) bootKNamed(pcfg *proc.ProcEnv, init bool) error {
 		return err
 	}
 	ss := newSubsystemCmd(nil, k, p, proc.HLINUX, cmd)
-	k.svcs.Lock()
-	defer k.svcs.Unlock()
 	k.svcs.svcs[sp.KNAMED] = append(k.svcs.svcs[sp.KNAMED], ss)
 	return err
 }
@@ -129,8 +130,7 @@ func (k *Kernel) bootUxd() (*Subsystem, error) {
 }
 
 func (k *Kernel) bootS3d() (*Subsystem, error) {
-	// XXX Mount realm buckets dynamically.
-	return k.bootSubsystem("fss3d", []string{"arielck", "kaashoek", "fkaashoek", "yizhengh"}, proc.HSCHEDD)
+	return k.bootSubsystem("fss3d", []string{}, proc.HSCHEDD)
 }
 
 func (k *Kernel) bootDbd(hostip string) (*Subsystem, error) {
@@ -169,7 +169,7 @@ func (k *Kernel) bootUprocd(args []string) (*Subsystem, error) {
 		realm := args[0]
 		ptype := args[1]
 
-		pn := path.Join(sp.SCHEDD, args[2], sp.UPROCDREL, realm, ptype)
+		pn := path.Join(sp.SCHEDD, args[2], sp.UPROCDREL, s.p.GetPid().String())
 
 		// container's first port is for uprocd
 		pm, err := s.container.AllocFirst()

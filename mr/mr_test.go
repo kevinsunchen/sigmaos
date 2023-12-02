@@ -11,6 +11,7 @@ import (
 	"path"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dustin/go-humanize"
 	"github.com/stretchr/testify/assert"
@@ -30,7 +31,6 @@ import (
 
 const (
 	OUTPUT = "/tmp/par-mr.out"
-	NCOORD = 5
 
 	// time interval (ms) for when a failure might happen. If too
 	// frequent and they don't finish ever. XXX determine
@@ -38,6 +38,7 @@ const (
 	CRASHTASK  = 3000
 	CRASHCOORD = 6000
 	CRASHSRV   = 1000000
+	MEM_REQ    = 1000
 )
 
 var app string // yaml app file
@@ -130,7 +131,7 @@ func TestMapper(t *testing.T) {
 
 	bins, err := mr.NewBins(ts.FsLib, job.Input, sp.Tlength(job.Binsz), SPLITSZ)
 	assert.Nil(t, err, "Err NewBins %v", err)
-	m, err := mr.NewMapper(ts.SigmaClnt, wc.Map, "test", p, job.Nreduce, job.Linesz, "nobin")
+	m, err := mr.NewMapper(ts.SigmaClnt, wc.Map, "test", p, job.Nreduce, job.Linesz, "nobin", "nointout")
 	assert.Nil(t, err, "NewMapper %v", err)
 	err = m.InitWrt(0, REDUCEIN)
 	assert.Nil(t, err)
@@ -281,15 +282,15 @@ func runN(t *testing.T, crashtask, crashcoord, crashprocd, crashux int, monitor 
 
 	sdc := scheddclnt.NewScheddClnt(ts.SigmaClnt.FsLib)
 	if monitor {
-		sdc.MonitorSchedds(ts.Realm())
+		sdc.MonitorScheddStats(ts.Realm(), time.Second)
 		defer sdc.Done()
 	}
 
 	nmap, err := mr.PrepareJob(ts.FsLib, ts.job, job)
-	assert.Nil(ts.T, err)
+	assert.Nil(ts.T, err, "Err prepare job %v: %v", job, err)
 	assert.NotEqual(ts.T, 0, nmap)
 
-	cm := mr.StartMRJob(ts.SigmaClnt, ts.job, job, mr.NCOORD, nmap, crashtask, crashcoord)
+	cm := mr.StartMRJob(ts.SigmaClnt, ts.job, job, mr.NCOORD, nmap, crashtask, crashcoord, MEM_REQ)
 
 	crashchan := make(chan bool)
 	l1 := &sync.Mutex{}
@@ -303,7 +304,7 @@ func runN(t *testing.T, crashtask, crashcoord, crashprocd, crashux int, monitor 
 		go ts.CrashServer(sp.UXREL, (i+1)*CRASHSRV, l2, crashchan)
 	}
 
-	cm.Wait()
+	cm.WaitGroup()
 
 	for i := 0; i < crashprocd+crashux; i++ {
 		<-crashchan
@@ -314,6 +315,7 @@ func runN(t *testing.T, crashtask, crashcoord, crashprocd, crashux int, monitor 
 	err = mr.PrintMRStats(ts.FsLib, ts.job)
 	assert.Nil(ts.T, err, "Error print MR stats: %v", err)
 
+	mr.CleanupMROutputs(ts.FsLib, job.Output, job.Intermediate)
 	ts.Shutdown()
 }
 

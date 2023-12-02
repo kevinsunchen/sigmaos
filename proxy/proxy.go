@@ -82,7 +82,7 @@ func newNpConn(pcfg *proc.ProcEnv, lip string) *NpConn {
 	npc := &NpConn{}
 	npc.clnt = protclnt.NewClnt(pcfg, sp.ROOTREALM.String())
 	npc.fidc = fidclnt.NewFidClnt(pcfg, sp.ROOTREALM.String())
-	npc.pc = pathclnt.NewPathClnt(pcfg, npc.fidc, sp.Tsize(1_000_000))
+	npc.pc = pathclnt.NewPathClnt(pcfg, npc.fidc)
 	npc.fm = newFidMap()
 	npc.cid = sp.TclntId(rand.Uint64())
 	return npc
@@ -105,7 +105,7 @@ func (npc *NpConn) Attach(args *sp.Tattach, rets *sp.Rattach, attach sps.AttachC
 	}
 	npc.uname = sp.Tuname(u.Uid)
 
-	mnt := npc.pc.GetMntNamed("proxy")
+	mnt := npc.pc.GetNamedMount()
 	fid, err := npc.fidc.Attach(npc.uname, npc.cid, mnt.Addr, "", "")
 	if err != nil {
 		db.DPrintf(db.PROXY, "Attach args %v err %v\n", args, err)

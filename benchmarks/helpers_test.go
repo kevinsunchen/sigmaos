@@ -84,14 +84,27 @@ func evictProcs(ts *test.RealmTstate, ps []*proc.Proc) {
 	}
 }
 
+func runRustSpawnBenchProc(ts *test.RealmTstate, sclnt *sigmaclnt.SigmaClnt, prog string) time.Duration {
+	p := proc.NewProc(prog, nil)
+	err := sclnt.Spawn(p)
+	assert.Nil(ts.Ts.T, err, "WaitStart: %v", err)
+	status, err := sclnt.WaitExit(p.GetPid())
+	assert.False(ts.Ts.T, status.IsStatusOK(), "Wrong status: %v", status)
+	assert.Nil(ts.Ts.T, err, "WaitStart: %v", err)
+	return 99 * time.Second
+}
+
 func runSpawnBenchProc(ts *test.RealmTstate, sclnt *sigmaclnt.SigmaClnt) time.Duration {
 	p := proc.NewProc("spawn-bench", nil)
 	err := sclnt.Spawn(p)
 	assert.Nil(ts.Ts.T, err, "WaitStart: %v", err)
 	status, err := sclnt.WaitExit(p.GetPid())
-	assert.True(ts.Ts.T, status.IsStatusOK(), "Wrong status: %v", status)
+	ok := assert.True(ts.Ts.T, status.IsStatusOK(), "Wrong status: %v", status)
 	assert.Nil(ts.Ts.T, err, "WaitStart: %v", err)
-	return time.Duration(status.Data().(float64))
+	if ok {
+		return time.Duration(status.Data().(float64))
+	}
+	return 99 * time.Second
 }
 
 // ========== Realm Helpers ==========
@@ -153,19 +166,20 @@ func evictMemBlockers(ts *test.Tstate, ps []*proc.Proc) {
 }
 
 // Warm up a realm, by starting uprocds for it on all machines in the cluster.
-func warmupRealm(ts *test.RealmTstate) {
+func warmupRealm(ts *test.RealmTstate, progs []string) {
+	db.DPrintf(db.TEST, "Warm up realm %v for progs %v", ts.GetRealm(), progs)
 	sdc := scheddclnt.NewScheddClnt(ts.SigmaClnt.FsLib)
-	// Get the number of schedds.
-	n, err := sdc.Nschedd()
-	assert.Nil(ts.Ts.T, err, "Get NSchedd: %v", err)
-	// Spawn one BE and one LC proc on each schedd, to force uprocds to start.
-	for _, ncore := range []proc.Tmcpu{0, 1000} {
-		// Make N LC procs.
-		ps, _ := newNProcs(n, "sleeper", []string{"1000us", ""}, nil, ncore)
-		// Burst the procs across the available schedds.
-		spawnBurstProcs(ts, ps)
-		// Wait for them to exit.
-		waitExitProcs(ts, ps)
+	// Get the list of schedds.
+	sds, err := sdc.GetSchedds()
+	assert.Nil(ts.Ts.T, err, "Get Schedds: %v", err)
+	for _, kid := range sds {
+		// Spawn one BE and one LC proc on each schedd, to force uprocds to start.
+		for _, ptype := range []proc.Ttype{proc.T_LC, proc.T_BE} {
+			for _, prog := range progs {
+				err := sdc.WarmCacheBin(kid, ts.GetRealm(), prog, ts.Ts.ProcEnv().GetBuildTag(), ptype)
+				assert.Nil(ts.Ts.T, err, "WarmCacheBin: %v", err)
+			}
+		}
 	}
 	db.DPrintf(db.TEST, "Warmed up realm %v", ts.GetRealm())
 }
@@ -198,11 +212,11 @@ func newNSemaphores(ts *test.RealmTstate, n int) ([]*semclnt.SemClnt, []interfac
 
 // ========== MR Helpers ========
 
-func newNMRJobs(ts *test.RealmTstate, p *perf.Perf, n int, app string) ([]*MRJobInstance, []interface{}) {
+func newNMRJobs(ts *test.RealmTstate, p *perf.Perf, n int, app string, memreq proc.Tmem) ([]*MRJobInstance, []interface{}) {
 	ms := make([]*MRJobInstance, 0, n)
 	is := make([]interface{}, 0, n)
 	for i := 0; i < n; i++ {
-		i := NewMRJobInstance(ts, p, app, app+"-mr-"+rand.String(16)+"-"+ts.GetRealm().String())
+		i := NewMRJobInstance(ts, p, app, app+"-mr-"+rand.String(16)+"-"+ts.GetRealm().String(), memreq)
 		ms = append(ms, i)
 		is = append(is, i)
 	}
@@ -306,13 +320,13 @@ func newHotelJobsCli(ts *test.RealmTstate, sigmaos bool, dur string, maxrps stri
 }
 
 // ========== ImgResize Helpers ==========
-func newImgResizeJob(ts *test.RealmTstate, p *perf.Perf, sigmaos bool, input string, ntasks int, ninputs int, mcpu proc.Tmcpu) ([]*ImgResizeJobInstance, []interface{}) {
+func newImgResizeJob(ts *test.RealmTstate, p *perf.Perf, sigmaos bool, input string, ntasks int, ninputs int, mcpu proc.Tmcpu, mem proc.Tmem, nrounds int) ([]*ImgResizeJobInstance, []interface{}) {
 	// n is ntrials, which is always 1.
 	n := 1
 	ws := make([]*ImgResizeJobInstance, 0, n)
 	is := make([]interface{}, 0, n)
 	for i := 0; i < n; i++ {
-		i := NewImgResizeJob(ts, p, sigmaos, input, ntasks, ninputs, mcpu)
+		i := NewImgResizeJob(ts, p, sigmaos, input, ntasks, ninputs, mcpu, mem, nrounds)
 		ws = append(ws, i)
 		is = append(is, i)
 	}
