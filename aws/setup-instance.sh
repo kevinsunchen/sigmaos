@@ -90,17 +90,18 @@ chmod 600 ~/.aws/credentials
 ENDSSH
 
 # decrypt the aws and docker secrets.
-SECRETS=".aws/credentials .docker/config.json"
-for F in $SECRETS
-do
-  yes | gpg --output $F --decrypt ${F}.gpg || exit 1
-done
+# SECRETS=".aws/credentials .docker/config.json"
+# for F in $SECRETS
+# do
+#   yes | gpg --output $F --decrypt ${F}.gpg || exit 1
+# done
 
 # scp the aws and docker secrets to the server and remove them locally.
-scp -i key-$VPC.pem .aws/config $LOGIN@$VM:/home/$LOGIN/.aws/
-scp -i key-$VPC.pem .aws/credentials $LOGIN@$VM:/home/$LOGIN/.aws/
-scp -i key-$VPC.pem .docker/config.json $LOGIN@$VM:/home/$LOGIN/.docker/
-rm $SECRETS
+# scp -i key-$VPC.pem .aws/config $LOGIN@$VM:/home/$LOGIN/.aws/
+# scp -i key-$VPC.pem .aws/credentials $LOGIN@$VM:/home/$LOGIN/.aws/
+# scp -i key-$VPC.pem .docker/config.json $LOGIN@$VM:/home/$LOGIN/.docker/
+# rm $SECRETS
+scp -i key-$VPC.pem ~/.aws/credentials $LOGIN@$VM:/home/$LOGIN/.aws/
 
 ssh -i key-$VPC.pem $LOGIN@$VM <<ENDSSH
 cat <<EOF > ~/.ssh/config
@@ -150,12 +151,12 @@ jCPLaDog91uFPSlez3OC/eEKgCCA6WUP6w9X80VpLvi2kPumXsJXPIcQvAmpQqYPeK+ELt
 IuzhbPSUS+OksAAAAOa2Fhc2hvZWtAZms2eDEBAgMEBQ==
 -----END OPENSSH PRIVATE KEY-----
 EOF
-chmod 600 ~/.ssh/aws-sigmaos
-cp ~/.ssh/aws-sigmaos ~/.ssh/id_rsa
+# chmod 600 ~/.ssh/aws-sigmaos
+# cp ~/.ssh/aws-sigmaos ~/.ssh/id_rsa
 
-cat << EOF >> ~/.ssh/authorized_keys
-ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC4NF0v/XEFId9bJJ1KvzvIIfcFUPvvNJCWH35JJbpaCCRuguHAlim30WqeTG+Ru7Debl80AVuve+XrhL2uYY6R1SeBXQ6Vl6jGPzmmlTqJLi73e6oNWI13QJ1ALriS2Vy5xk1ckmS5epYS0OixerQJ/9gHTcdHWcNDbfUOi23jqdciNExSqjamrYvUwi14IhRNRqltrk2V4ephnRI+8S3ExansbZSwnu0XIz7j86e3PFMuuHwLJWv59UdO9roJl2B36dnzWp0lpqcXYrk3gbbXBCu6iV1Dv7XgvElTtmwqJJ50O2pzwJv2pBB/tw3LkWldF6FuYO3vjaTOgdm2gbCsw2DMJSa6oXJB4cRztXDe51ljbhdYptHxbJgM7+852soEma2uhuek80rRn3UEqrQ1MIsw0DJXx5k+tDbJAWyzy4k4opR583Go9UtRq/BY6qyaFHA/DY13c5QiJNapN5JameX3+wUvNmR22lX/SW61KFjXzYnn//77UCidNPr6SQs= kaashoek@fk6x1
-EOF
+# cat << EOF >> ~/.ssh/authorized_keys
+# ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC4NF0v/XEFId9bJJ1KvzvIIfcFUPvvNJCWH35JJbpaCCRuguHAlim30WqeTG+Ru7Debl80AVuve+XrhL2uYY6R1SeBXQ6Vl6jGPzmmlTqJLi73e6oNWI13QJ1ALriS2Vy5xk1ckmS5epYS0OixerQJ/9gHTcdHWcNDbfUOi23jqdciNExSqjamrYvUwi14IhRNRqltrk2V4ephnRI+8S3ExansbZSwnu0XIz7j86e3PFMuuHwLJWv59UdO9roJl2B36dnzWp0lpqcXYrk3gbbXBCu6iV1Dv7XgvElTtmwqJJ50O2pzwJv2pBB/tw3LkWldF6FuYO3vjaTOgdm2gbCsw2DMJSa6oXJB4cRztXDe51ljbhdYptHxbJgM7+852soEma2uhuek80rRn3UEqrQ1MIsw0DJXx5k+tDbJAWyzy4k4opR583Go9UtRq/BY6qyaFHA/DY13c5QiJNapN5JameX3+wUvNmR22lX/SW61KFjXzYnn//77UCidNPr6SQs= kaashoek@fk6x1
+# EOF
 
 sudo mkdir -p /mnt/9p
 
@@ -166,9 +167,9 @@ fi
 
 if [ -d "sigmaos" ] 
 then
-  ssh-agent bash -c 'ssh-add ~/.ssh/aws-sigmaos; (cd sigmaos; git pull;)'
+  ssh-agent bash -c '(cd sigmaos; git pull;)'
 else
-  ssh-agent bash -c 'ssh-add ~/.ssh/aws-sigmaos; git clone git@g.csail.mit.edu:sigmaos; (cd sigmaos; go mod download;)'
+  ssh-agent bash -c 'git clone https://github.com/kevinsunchen/sigmaos.git; (cd sigmaos; git checkout etcd-sigmasrv-newprocclnt-prvdr; git pull; go mod download;)'
   # Indicate that sigma has not been build yet on this instance
   touch ~/.nobuild
   # Load apparmor profile
@@ -176,14 +177,14 @@ else
   sudo apparmor_parser -r container/sigmaos-uproc
 fi
 
-if [ -d "corral" ] 
-then
-  ssh-agent bash -c 'ssh-add ~/.ssh/aws-sigmaos; (cd corral; git pull;)'
-else
-  ssh-agent bash -c 'ssh-add ~/.ssh/aws-sigmaos; git clone git@g.csail.mit.edu:corral; (cd corral; git checkout k8s; git pull; go mod download;)'
-  # Indicate that sigma has not been build yet on this instance
-  touch ~/.nobuild
-fi
+# if [ -d "corral" ] 
+# then
+#   ssh-agent bash -c 'ssh-add ~/.ssh/aws-sigmaos; (cd corral; git pull;)'
+# else
+#   ssh-agent bash -c 'ssh-add ~/.ssh/aws-sigmaos; git clone git@g.csail.mit.edu:corral; (cd corral; git checkout k8s; git pull; go mod download;)'
+#   # Indicate that sigma has not been build yet on this instance
+#   touch ~/.nobuild
+# fi
 
 # Add to docker group
 sudo usermod -aG docker ubuntu

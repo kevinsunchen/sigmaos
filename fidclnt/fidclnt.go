@@ -98,6 +98,7 @@ func (fidc *FidClnt) Attach(uname sp.Tuname, cid sp.TclntId, addrs sp.Taddrs, pn
 	reply, err := fidc.pc.Attach(addrs, uname, cid, fid, path.Split(tree))
 	if err != nil {
 		db.DPrintf(db.FIDCLNT_ERR, "Error attach %v: %v", addrs, err)
+		db.DPrintf(db.ALWAYS, "Error attach %v: %v", addrs, err)
 		fidc.freeFid(fid)
 		return sp.NoFid, err
 	}
