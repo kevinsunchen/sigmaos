@@ -104,7 +104,7 @@ func (mnt *MntTable) umount(path path.Path, exact bool) (sp.Tfid, path.Path, *se
 			return p.fid, left, nil
 		}
 	}
-	// db.DPrintf(db.ALWAYS, "umount: %v %v\n", path, mnt.mounts)
+	db.DPrintf(db.ALWAYS, "umount: %v %v\n", path, mnt.mounts)
 	return sp.NoFid, nil, serr.NewErr(serr.TErrUnreachable, fmt.Sprintf("%v (no mount)", path))
 }
 

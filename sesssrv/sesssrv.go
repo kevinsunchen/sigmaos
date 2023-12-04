@@ -8,7 +8,7 @@ import (
 	"sigmaos/fs"
 	"sigmaos/lockmap"
 	"sigmaos/netsrv"
-	"sigmaos/overlaydir"
+	overlay "sigmaos/overlaydir"
 	"sigmaos/path"
 	"sigmaos/proc"
 	"sigmaos/serr"
@@ -37,7 +37,7 @@ type SessSrv struct {
 	addr     string
 	dirunder fs.Dir
 	dirover  *overlay.DirOverlay
-	newps     sps.NewProtServer
+	newps    sps.NewProtServer
 	stats    *stats.StatInfo
 	st       *sessstatesrv.SessionTable
 	sm       *sessstatesrv.SessionMgr
@@ -70,8 +70,10 @@ func NewSessSrv(pe *proc.ProcEnv, root fs.Dir, addr string, newps sps.NewProtSer
 
 	ssrv.dirover.Mount(sp.STATSD, ssrv.stats)
 
+	db.DPrintf(db.ALWAYS, "Creating new netsrv with addr arg %v", addr)
 	ssrv.srv = netsrv.NewNetServer(pe, ssrv, addr, spcodec.WriteFcallAndData, spcodec.ReadUnmarshalFcallAndData)
 	ssrv.sm = sessstatesrv.NewSessionMgr(ssrv.st, ssrv.SrvFcall)
+	db.DPrintf(db.ALWAYS, "Listen on address: %v", ssrv.srv.MyAddr())
 	db.DPrintf(db.SESSSRV, "Listen on address: %v", ssrv.srv.MyAddr())
 	return ssrv
 }

@@ -1,100 +1,16 @@
-package netsigma
+package main
 
 import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net"
-	db "sigmaos/debug"
 	"strings"
-
-	sp "sigmaos/sigmap"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 )
-
-// Rearrange addrs so that first addr is in the realm as clnt.
-func Rearrange(clntnet string, addrs sp.Taddrs) sp.Taddrs {
-	if len(addrs) == 1 {
-		return addrs
-	}
-	raddrs := make(sp.Taddrs, len(addrs))
-	for i := 0; i < len(addrs); i++ {
-		raddrs[i] = addrs[i]
-	}
-	p := -1
-	l := -1
-	for i, a := range raddrs {
-		if a.Net == clntnet {
-			l = i
-			break
-		}
-		if a.Net == sp.ROOTREALM.String() && p < 0 {
-			p = i
-		}
-	}
-	if l >= 0 {
-		swap(raddrs, l)
-	} else if p >= 0 {
-		swap(raddrs, p)
-	}
-	return raddrs
-}
-
-func swap(addrs sp.Taddrs, i int) sp.Taddrs {
-	v := addrs[0]
-	addrs[0] = addrs[i]
-	addrs[i] = v
-	return addrs
-}
-
-func QualifyAddr(addr string) (string, error) {
-	host, port, err := net.SplitHostPort(addr)
-	db.DPrintf(db.ALWAYS, "addr: %v, host: %v, port: %v", addr, host, port)
-	if err != nil {
-		return "", err
-	}
-	if host == "::" {
-		ip, err := LocalIP()
-		if err != nil {
-			return "", err
-		}
-		addr = net.JoinHostPort(ip, port)
-	}
-	return addr, nil
-}
-
-// XXX deduplicate with localIP
-func LocalInterface() (string, error) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return "", err
-	}
-	for _, i := range ifaces {
-		addrs, err := i.Addrs()
-		if err != nil {
-			return "", err
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			if ip.IsLoopback() {
-				continue
-			}
-			if ip.To4() == nil {
-				continue
-			}
-			return i.Name, nil
-		}
-	}
-	return "", fmt.Errorf("localInterface: not found")
-}
 
 // adapted from https://gist.github.com/nanmu42/9c8139e15542b3c4a1709cb9e9ac61eb
 var privateIPBlocks []*net.IPNet
@@ -112,7 +28,7 @@ func init() {
 	} {
 		_, block, err := net.ParseCIDR(cidr)
 		if err != nil {
-			db.DPrintf(db.ALWAYS, "parse error on %q: %v", cidr, err)
+			log.Printf("parse error on %q: %v", cidr, err)
 		}
 		privateIPBlocks = append(privateIPBlocks, block)
 	}
@@ -165,7 +81,7 @@ func localIPs() ([]net.IP, error) {
 func PublicIP() (string, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
-		db.DPrintf(db.ALWAYS, "Could not load default config: %v", err)
+		log.Printf("Could not load default config: %v", err)
 		return "", err
 	}
 
@@ -180,21 +96,21 @@ func PublicIP() (string, error) {
 		defer publicip.Content.Close()
 		bytes, _ := io.ReadAll(publicip.Content)
 		// log.Printf("ee %v", publ)
-		db.DPrintf(db.ALWAYS, "Retrieved public IP: %v\n", string(bytes))
+		log.Printf("Retrieved public IP: %v\n", string(bytes))
 		return string(bytes), nil
 	}
 
-	db.DPrintf(db.ALWAYS, "Unable to retrieve the public IP address from the EC2 instance: %s\n", err)
+	log.Printf("Unable to retrieve the public IP address from the EC2 instance: %s\n", err)
 
 	ips, err := localIPs()
 	if err != nil {
-		db.DPrintf(db.ALWAYS, "Error retrieving local IPs: %v", err)
+		log.Printf("Error retrieving local IPs: %v", err)
 	}
 
 	// if we have a local ip in 10.10.x.x (for Cloudlab), prioritize that first
 	for _, i := range ips {
 		if !(isPrivateIP(i)) {
-			db.DPrintf(db.ALWAYS, "%v", i.String())
+			log.Printf("%v", i.String())
 			return i.String(), nil
 		}
 	}
@@ -203,7 +119,7 @@ func PublicIP() (string, error) {
 		return "", fmt.Errorf("LocalIP: no IP")
 	}
 
-	db.DPrintf(db.ALWAYS, "Available IP: %v", ips[len(ips)-1].String())
+	log.Printf("Available IP: %v", ips[len(ips)-1].String())
 	return ips[len(ips)-1].String(), nil
 }
 
@@ -232,4 +148,63 @@ func LocalIP1() (string, error) {
 	}
 
 	return ips[len(ips)-1].String(), nil
+}
+
+func QualifyAddr(addr string) (string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	log.Printf("addr: %v, host: %v, port: %v", addr, host, port)
+	if err != nil {
+		return "", err
+	}
+	if host == "::" {
+		ip, err := LocalIP1()
+		if err != nil {
+			return "", err
+		}
+		addr = net.JoinHostPort(ip, port)
+	}
+	return addr, nil
+}
+
+func main() {
+	ips, _ := localIPs()
+	log.Printf("ips: %v", ips)
+	pub, _ := PublicIP()
+	log.Printf("PublicIP: %v", pub)
+	loc, _ := LocalIP1()
+	log.Printf("LocalIP: %v", loc)
+
+	l, err := net.Listen("tcp", loc+":0")
+	if err != nil {
+		log.Printf("err %v", err)
+	}
+
+	log.Printf("l.MyAddr(): %v", l.Addr().String())
+	qual, err := QualifyAddr(l.Addr().String())
+	if err != nil {
+		log.Printf("Error qualifying addr: err %v", err)
+	}
+
+	log.Printf("Qualified addr: %v", qual)
+	for {
+		// Listen for an incoming connection
+		conn, err := l.Accept()
+		if err != nil {
+			panic(err)
+		}
+		// Handle connections in a new goroutine
+		go func(conn net.Conn) {
+			buf := make([]byte, 1024)
+			len, err := conn.Read(buf)
+			if err != nil {
+				fmt.Printf("Error reading: %#v\n", err)
+				return
+			}
+			fmt.Printf("Message received: %s\n", string(buf[:len]))
+
+			conn.Write([]byte("Message received.\n"))
+			conn.Close()
+		}(conn)
+	}
+
 }

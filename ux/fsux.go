@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	db "sigmaos/debug"
-	"sigmaos/netsigma"
 	"sigmaos/perf"
 	"sigmaos/proc"
 	"sigmaos/sigmaclnt"
@@ -25,10 +24,10 @@ type FsUx struct {
 }
 
 func RunFsUx(rootux string) {
-	ip, err := netsigma.LocalIP()
-	if err != nil {
-		db.DFatalf("LocalIP %v %v\n", sp.UX, err)
-	}
+	// ip, err := netsigma.LocalIP()
+	// if err != nil {
+	// 	db.DFatalf("LocalIP %v %v\n", sp.UX, err)
+	// }
 	// seccomp.LoadFilter()  // sanity check: if enabled we want fsux to fail
 	fsux := newUx(rootux)
 	root, sr := newDir([]string{rootux})
@@ -36,7 +35,8 @@ func RunFsUx(rootux string) {
 		db.DFatalf("newDir %v\n", sr)
 	}
 	pcfg := proc.GetProcEnv()
-	srv, err := sigmasrv.NewSigmaSrvRoot(root, ip+":0", sp.UX, pcfg)
+	// srv, err := sigmasrv.NewSigmaSrvRoot(root, ip+":0", sp.UX, pcfg)
+	srv, err := sigmasrv.NewSigmaSrvRoot(root, ":0", sp.UX, pcfg)
 	if err != nil {
 		db.DFatalf("BootSrvAndPost %v\n", err)
 	}

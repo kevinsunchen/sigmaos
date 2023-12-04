@@ -257,8 +257,10 @@ func Run(prvdr sp.Tprovider) {
 	if err != nil {
 		db.DFatalf("Error NewMemFs: %v", err)
 	}
+
 	pq := NewProcQ(mfs)
 	ssrv, err := sigmasrv.NewSigmaSrvMemFs(mfs, pq)
+
 	if err != nil {
 		db.DFatalf("Error PDS: %v", err)
 	}
@@ -271,9 +273,11 @@ func Run(prvdr sp.Tprovider) {
 
 	// Perf monitoring
 	p, err := perf.NewPerf(pcfg, perf.PROCQ)
+
 	if err != nil {
 		db.DFatalf("Error NewPerf: %v", err)
 	}
+
 	defer p.Done()
 	//	go pq.stats()
 	ssrv.RunServer()

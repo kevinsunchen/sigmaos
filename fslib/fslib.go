@@ -15,6 +15,7 @@ type FsLib struct {
 // Only to be called by procs.
 func NewFsLib(pcfg *proc.ProcEnv) (*FsLib, error) {
 	db.DPrintf(db.PORT, "NewFsLib: uname %s lip %s addrs %v\n", pcfg.GetUname(), pcfg.LocalIP, pcfg.EtcdIP)
+	db.DPrintf(db.ALWAYS, "NewFsLib: uname %s lip %s addrs %v\n", pcfg.GetUname(), pcfg.LocalIP, pcfg.EtcdIP)
 	fl := &FsLib{
 		pcfg:     pcfg,
 		FdClient: fdclnt.NewFdClient(pcfg, nil),

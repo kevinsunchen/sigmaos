@@ -45,6 +45,11 @@ func NewMountServer(addr string) Tmount {
 	return NewMountService(addrs)
 }
 
+func NewMountServerMultAddr(addrSlice []string) Tmount {
+	addrs := NewTaddrs(addrSlice)
+	return NewMountService(addrs)
+}
+
 func (mnt Tmount) TargetHostPort() (string, string, error) {
 	return net.SplitHostPort(mnt.Addr[0].Addr)
 }

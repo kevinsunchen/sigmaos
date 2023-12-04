@@ -260,7 +260,7 @@ func (sd *Schedd) shouldGetProc() (proc.Tmem, bool) {
 func (sd *Schedd) register() {
 	rpcc, err := rpcclnt.NewRPCClnt([]*fslib.FsLib{sd.mfs.SigmaClnt().FsLib}, path.Join(sp.LCSCHED, sd.provider.String(), "~any"))
 	if err != nil {
-		db.DFatalf("Error lsched rpccc: %v", err)
+		db.DFatalf("Error lcsched rpcc: %v", err)
 	}
 	req := &lcproto.RegisterScheddRequest{
 		KernelID: sd.kernelId,

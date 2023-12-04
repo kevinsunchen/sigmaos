@@ -3,10 +3,10 @@ package boot
 import (
 	"os"
 
-	"sigmaos/proc"
 	db "sigmaos/debug"
 	"sigmaos/kernel"
 	"sigmaos/kernelsrv"
+	"sigmaos/proc"
 )
 
 type Boot struct {

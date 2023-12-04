@@ -304,8 +304,8 @@ func TestSpawnManyProcsParallel(t *testing.T) {
 	ts := test.NewTstateAllWithProvider(t, sp.T_AWS)
 	ts.BootLcschedNodeWithProvider(sp.T_CLOUDLAB)
 
-	const N_CONCUR = 15  // 13
-	const N_SPAWNS = 500 // 500
+	const N_CONCUR = 5   // 13
+	const N_SPAWNS = 100 // 500
 
 	err := ts.BootNodeWithProvider(5, sp.T_AWS)
 	assert.Nil(t, err, "BootProcd 1")

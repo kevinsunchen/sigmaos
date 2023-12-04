@@ -14,7 +14,6 @@ import (
 	"sigmaos/fsetcd"
 	"sigmaos/fslibsrv"
 	"sigmaos/leaderetcd"
-	"sigmaos/netsigma"
 	"sigmaos/perf"
 	"sigmaos/port"
 	"sigmaos/portclnt"
@@ -161,14 +160,17 @@ func Run(args []string) error {
 }
 
 func (nd *Named) newSrv() (sp.Tmount, error) {
-	ip, err := netsigma.LocalIP()
-	if err != nil {
-		return sp.NullMount(), err
-	}
+	// ip, err := netsigma.LocalIP()
+	// if err != nil {
+	// 	return sp.NullMount(), err
+	// }
+	var ip string
+	var err error
 	root := rootDir(nd.fs, nd.realm)
 	var pi portclnt.PortInfo
 	if nd.realm == sp.ROOTREALM || nd.ProcEnv().GetNet() == sp.ROOTREALM.String() {
-		ip = ip + ":0"
+		// ip = ip + ":0"
+		ip = ":0"
 	} else {
 		_, pi0, err := portclnt.NewPortClntPort(nd.SigmaClnt.FsLib)
 		if err != nil {
@@ -188,6 +190,20 @@ func (nd *Named) newSrv() (sp.Tmount, error) {
 	}
 	nd.SigmaSrv = ssrv
 
+	// // TODO make a helper function for this in netsigma/ip.go like QualifyAddr
+	// _, myAddrPort, err := net.SplitHostPort(nd.MyAddr())
+	// if err != nil {
+	// 	db.DPrintf(db.ALWAYS, "Error splitting addr %v %v %v", nd.MyAddr(), myAddrPort, err)
+	// }
+
+	// publicIP, err := netsigma.LocalIP()
+	// if err != nil {
+	// 	return sp.NullMount(), err
+	// }
+	// publicIP = publicIP + ":" + myAddrPort
+
+	// mnt := sp.NewMountServerMultAddr([]string{nd.MyAddr(), publicIP})
+	db.DPrintf(db.ALWAYS, "ip passed to BootSrv: %v, nd.MyAddr(): %v, nd.realm: %v", ip, nd.MyAddr(), nd.realm)
 	mnt := sp.NewMountServer(nd.MyAddr())
 	if nd.realm != sp.ROOTREALM {
 		mnt = port.NewPublicMount(pi.Hip, pi.Pb, nd.ProcEnv().GetNet(), nd.MyAddr())
