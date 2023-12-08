@@ -55,6 +55,7 @@ type GroupMgrConfig struct {
 	Job       string
 	Mcpu      proc.Tmcpu
 	NReplicas int
+	Provider  sp.Tprovider
 
 	// For testing purposes
 	crash     int64
@@ -64,12 +65,17 @@ type GroupMgrConfig struct {
 
 // If n == 0, run only one member (i.e., no hot standby's or replication)
 func NewGroupConfig(n int, bin string, args []string, mcpu proc.Tmcpu, job string) *GroupMgrConfig {
+	return NewGroupConfigWithProvider(n, bin, args, mcpu, job, sp.DEFAULT_PRVDR)
+}
+
+func NewGroupConfigWithProvider(n int, bin string, args []string, mcpu proc.Tmcpu, job string, provider sp.Tprovider) *GroupMgrConfig {
 	return &GroupMgrConfig{
 		NReplicas: n,
 		Program:   bin,
 		Args:      append([]string{job}, args...),
 		Mcpu:      mcpu,
 		Job:       job,
+		Provider:  provider,
 	}
 }
 
@@ -162,6 +168,7 @@ func newMember(sc *sigmaclnt.SigmaClnt, cfg *GroupMgrConfig, id int, crash int64
 func (m *member) spawn() error {
 	p := proc.NewProc(m.Program, m.Args)
 	p.SetMcpu(m.Mcpu)
+	p.SetProvider(m.Provider)
 	p.SetCrash(m.crash)
 	p.SetPartition(m.partition)
 	p.SetNetFail(m.netfail)
