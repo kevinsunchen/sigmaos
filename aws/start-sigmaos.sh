@@ -124,10 +124,10 @@ for vm in $vms; do
     nproc
   fi
   
-  aws s3 --profile sigmaos cp s3://9ps3/img-save/1.jpg ~/
-  aws s3 --profile sigmaos cp s3://9ps3/img-save/6.jpg ~/
-  aws s3 --profile sigmaos cp s3://9ps3/img-save/7.jpg ~/
-  aws s3 --profile sigmaos cp s3://9ps3/img-save/8.jpg ~/
+  aws s3 --profile sigmaos cp s3://kschen-9ps3/img/1.jpg ~/
+  aws s3 --profile sigmaos cp s3://kschen-9ps3/img/6.jpg ~/
+  aws s3 --profile sigmaos cp s3://kschen-9ps3/img/7.jpg ~/
+  aws s3 --profile sigmaos cp s3://kschen-9ps3/img/8.jpg ~/
 
   cd sigmaos
 

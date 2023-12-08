@@ -260,3 +260,25 @@ func runImgResize(ts *test.RealmTstate, i interface{}) (time.Duration, float64) 
 	db.DPrintf(db.TEST, "Done cleaning up imgresize")
 	return t, 1.0
 }
+
+func runImgResizeMultiProvider(ts *test.RealmTstate, i interface{}) (time.Duration, float64) {
+	ji := i.(*ImgResizeMultiProviderJobInstance)
+	ji.ready <- true
+	<-ji.ready
+	// Start a procd clnt, and monitor procds
+	if ji.sigmaos {
+		rpcc := scheddclnt.NewScheddClnt(ts.SigmaClnt.FsLib)
+		rpcc.MonitorScheddStats(ts.GetRealm(), SCHEDD_STAT_MONITOR_PERIOD)
+		defer rpcc.Done()
+	}
+	//	ji.Cleanup()
+	start := time.Now()
+	ji.StartImgResizeMultiProviderJob()
+	ji.Wait()
+	t := time.Since(start)
+	time.Sleep(2 * time.Second)
+	db.DPrintf(db.TEST, "Cleaning up imgresize")
+	//	ji.Cleanup()
+	db.DPrintf(db.TEST, "Done cleaning up imgresize")
+	return t, 1.0
+}

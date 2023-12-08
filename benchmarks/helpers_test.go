@@ -333,6 +333,24 @@ func newImgResizeJob(ts *test.RealmTstate, p *perf.Perf, sigmaos bool, input str
 	return ws, is
 }
 
+func newImgResizeMultiProviderJob(ts *test.RealmTstate, p *perf.Perf, sigmaos bool, inputs map[string]sp.Tprovider, ntasks int, mcpu proc.Tmcpu, mem proc.Tmem, nrounds int, initProvider sp.Tprovider) ([]*ImgResizeMultiProviderJobInstance, []interface{}) {
+	// n is ntrials, which is always 1.
+	n := 1
+	ws := make([]*ImgResizeMultiProviderJobInstance, 0, n)
+	is := make([]interface{}, 0, n)
+	for i := 0; i < n; i++ {
+		params := []*ImgResizeJobParams{}
+		for input, provider := range inputs {
+			prm := NewImgResizeJobParams(provider, input, ntasks)
+			params = append(params, prm)
+		}
+		i := NewImgResizeMultiProviderJob(ts, p, sigmaos, params, mcpu, mem, nrounds, initProvider)
+		ws = append(ws, i)
+		is = append(is, i)
+	}
+	return ws, is
+}
+
 // ========== Social Network Helpers ==========
 
 func newSocialNetworkJobs(

@@ -5,6 +5,7 @@ import (
 	"image/jpeg"
 	"math/rand"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -57,11 +58,12 @@ func main() {
 
 type Trans struct {
 	*sigmaclnt.SigmaClnt
-	inputs  []string
-	output  string
-	ctx     fs.CtxI
-	nrounds int
-	p       *perf.Perf
+	inputs    []string
+	output    string
+	extension string
+	ctx       fs.CtxI
+	nrounds   int
+	p         *perf.Perf
 }
 
 func NewTrans(pe *proc.ProcEnv, args []string, p *perf.Perf) (*Trans, error) {
@@ -79,7 +81,10 @@ func NewTrans(pe *proc.ProcEnv, args []string, p *perf.Perf) (*Trans, error) {
 	t.inputs = strings.Split(args[1], ",")
 	db.DPrintf(db.ALWAYS, "Args {%v} inputs {%v}", args[1], t.inputs)
 	// XXX Should be fixed properly
-	t.output = t.inputs[0] + "-thumbnail"
+	ext := path.Ext(t.inputs[0])
+	t.output = strings.TrimSuffix(args[2], ext) + "-"
+	t.extension = ext
+	db.DPrintf(db.ALWAYS, "Imgresize out fn %v with extension %v", t.output, t.extension)
 	t.nrounds, err = strconv.Atoi(args[3])
 	if err != nil {
 		db.DFatalf("Err convert nrounds: %v", err)
@@ -123,9 +128,11 @@ func (t *Trans) Work(i int, output string) *proc.Status {
 	db.DPrintf(db.ALWAYS, "Time %v resize: %v", t.inputs[i], time.Since(dr))
 
 	dcw := time.Now()
-	wrt, err := t.CreateWriter(output, 0777, sp.OWRITE)
+	outfn := output + t.extension
+	db.DPrintf(db.ALWAYS, "Creating writer for %v", outfn)
+	wrt, err := t.CreateWriter(outfn, 0777, sp.OWRITE)
 	if err != nil {
-		return proc.NewStatusErr(fmt.Sprintf("Open output failed %v", output), err)
+		return proc.NewStatusErr(fmt.Sprintf("Open output failed %v", outfn), err)
 	}
 	//	pwrt := perf.NewPerfWriter(wrt, t.p)
 	db.DPrintf(db.ALWAYS, "Time %v create writer: %v", t.inputs[i], time.Since(dcw))

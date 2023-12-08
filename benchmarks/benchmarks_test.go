@@ -2,7 +2,6 @@ package benchmarks_test
 
 import (
 	"flag"
-	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"net/rpc"
 	"os/exec"
@@ -19,8 +18,11 @@ import (
 	sp "sigmaos/sigmap"
 	"sigmaos/test"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -77,6 +79,9 @@ var SOCIAL_NETWORK_DURS string
 var SOCIAL_NETWORK_MAX_RPS string
 var SOCIAL_NETWORK_READ_ONLY bool
 var IMG_RESIZE_INPUT_PATH string
+var IMG_RESIZE_MP_INPUTS_PROVIDERS_TO_PATHS string
+var IMG_RESIZE_MP_INIT_PROVIDER string
+var N_IMG_RESIZE_MP_JOBS_EACH int
 var N_IMG_RESIZE_JOBS int
 var N_IMG_RESIZE_INPUTS_PER_JOB int
 var IMG_RESIZE_MCPU int
@@ -149,6 +154,9 @@ func init() {
 	flag.IntVar(&GO_MAX_PROCS, "gomaxprocs", int(linuxsched.GetNCores()), "Go maxprocs setting for procs to be spawned.")
 	flag.IntVar(&MAX_PARALLEL, "max_parallel", 1, "Max amount of parallelism.")
 	flag.StringVar(&IMG_RESIZE_INPUT_PATH, "imgresize_path", "name/s3/~local/9ps3/img/1.jpg", "Path of img resize input file.")
+	flag.StringVar(&IMG_RESIZE_MP_INPUTS_PROVIDERS_TO_PATHS, "imgresizemp_providers_to_paths", "name/s3/~local/kschen-9ps3/img/6.jpg:"+sp.DEFAULT_PRVDR.String(), "Map from path of img resize input file to desired provider to process that file, in the format \"PATH:PROVIDER;...\".")
+	flag.StringVar(&IMG_RESIZE_MP_INIT_PROVIDER, "imgresizemp_init_provider", sp.DEFAULT_PRVDR.String(), "Provider to spawn the initial img resize task on.")
+	flag.IntVar(&N_IMG_RESIZE_MP_JOBS_EACH, "n_imgresizemp_each", 10, "Number of img resize jobs for each file provided.")
 	flag.IntVar(&N_IMG_RESIZE_JOBS, "n_imgresize", 10, "Number of img resize jobs.")
 	flag.IntVar(&N_IMG_RESIZE_INPUTS_PER_JOB, "n_imgresize_per", 1, "Number of img resize inputs per job.")
 	flag.IntVar(&IMG_RESIZE_MCPU, "imgresize_mcpu", 100, "MCPU for img resize worker.")
@@ -1089,6 +1097,41 @@ func TestImgResize(t *testing.T) {
 	}()
 	monitorCPUUtil(ts1, p)
 	runOps(ts1, apps, runImgResize, rs)
+	printResultSummary(rs)
+	rootts.Shutdown()
+}
+
+func TestImgResizeMultiProvider(t *testing.T) {
+	rootts := test.NewTstateWithRealms(t)
+	ts1 := test.NewRealmTstate(rootts, REALM1)
+	if PREWARM_REALM {
+		warmupRealm(ts1, []string{"imgresize", "imgresized"})
+	}
+	rs := benchmarks.NewResults(1, benchmarks.E2E)
+	p := newRealmPerf(ts1)
+	defer p.Done()
+
+	inputs := map[string]sp.Tprovider{}
+	for _, pairStr := range strings.Split(IMG_RESIZE_MP_INPUTS_PROVIDERS_TO_PATHS, ";") {
+		pair := strings.Split(pairStr, ":")
+		path := pair[0]
+		prvdr := sp.ParseTprovider(pair[1])
+		inputs[path] = prvdr
+	}
+
+	initProvider := sp.ParseTprovider(IMG_RESIZE_MP_INIT_PROVIDER)
+
+	jobs, apps := newImgResizeMultiProviderJob(ts1, p, true, inputs, N_IMG_RESIZE_MP_JOBS_EACH, proc.Tmcpu(IMG_RESIZE_MCPU), proc.Tmem(IMG_RESIZE_MEM_MB), IMG_RESIZE_N_ROUNDS, initProvider)
+	go func() {
+		for _, j := range jobs {
+			// Wait until ready
+			<-j.ready
+			// Ack to allow the job to proceed.
+			j.ready <- true
+		}
+	}()
+	monitorCPUUtil(ts1, p)
+	runOps(ts1, apps, runImgResizeMultiProvider, rs)
 	printResultSummary(rs)
 	rootts.Shutdown()
 }
