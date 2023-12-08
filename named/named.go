@@ -97,13 +97,15 @@ func Run(args []string) error {
 	ch := make(chan struct{})
 	go nd.waitExit(ch)
 
-	db.DPrintf(db.NAMED, "started %v %v", pcfg.GetPID(), nd.realm)
+	db.DPrintf(db.NAMED, "started a %v %v", pcfg.GetPID(), nd.realm)
 
 	if err := nd.startLeader(); err != nil {
 		db.DPrintf(db.NAMED, "%v: startLeader %v err %v\n", pcfg.GetPID(), nd.realm, err)
 		return err
 	}
 	defer nd.fs.Close()
+
+	db.DPrintf(db.NAMED, "finished startLeader() call, starting newSrv() call")
 
 	mnt, err := nd.newSrv()
 	if err != nil {

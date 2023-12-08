@@ -1107,6 +1107,8 @@ func TestImgResizeMultiProvider(t *testing.T) {
 	db.DPrintf(db.ALWAYS, "Starting realm Tstate with provider %v", initProvider)
 	rootts := test.NewTstateWithRealmsWithProvider(t, initProvider)
 	ts1 := test.NewRealmTstateWithProvider(rootts, REALM1, initProvider)
+	// rootts := test.NewTstateWithRealms(t)
+	// ts1 := test.NewRealmTstate(rootts, REALM1)
 	if PREWARM_REALM {
 		warmupRealm(ts1, []string{"imgresize", "imgresized"})
 	}

@@ -136,6 +136,7 @@ func newSysClntWithProvider(t *testing.T, srvs string, provider sp.Tprovider) (*
 	if err1 != nil {
 		db.DFatalf("Error local IP: %v", err1)
 	}
+	db.DPrintf(db.TEST, "Making new test proc env: realm %v etcd %v local %v tag %v overlays %v", sp.ROOTREALM, EtcdIP, localIP, tag, Overlays)
 	pcfg := proc.NewTestProcEnv(sp.ROOTREALM, EtcdIP, localIP, tag, Overlays)
 	proc.SetSigmaDebugPid(pcfg.GetPID().String())
 	var kernelid string
