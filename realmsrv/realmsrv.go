@@ -153,6 +153,7 @@ func (rm *RealmSrv) MakeWithProvider(ctx fs.CtxI, req proto.MakeRequest, res *pr
 		return err
 	}
 
+	db.DPrintf(db.REALMD, "Spawning new named proc\n")
 	p := proc.NewProc("named", []string{req.Realm, "0"})
 	p.SetMcpu(NAMED_MCPU)
 	p.SetProvider(provider)
