@@ -1120,6 +1120,7 @@ func TestImgResizeMultiProvider(t *testing.T) {
 	}
 
 	initProvider := sp.ParseTprovider(IMG_RESIZE_MP_INIT_PROVIDER)
+	db.DPrintf(db.ALWAYS, "Starting new ImgResizeMPJob with inputs=%v, initProvider=%v, ntasks=%v, mcpu=%v, mem=%v, nrounds=%v", inputs, initProvider, N_IMG_RESIZE_MP_JOBS_EACH, IMG_RESIZE_MCPU, IMG_RESIZE_MEM_MB, IMG_RESIZE_N_ROUNDS)
 
 	jobs, apps := newImgResizeMultiProviderJob(ts1, p, true, inputs, N_IMG_RESIZE_MP_JOBS_EACH, proc.Tmcpu(IMG_RESIZE_MCPU), proc.Tmem(IMG_RESIZE_MEM_MB), IMG_RESIZE_N_ROUNDS, initProvider)
 	go func() {
