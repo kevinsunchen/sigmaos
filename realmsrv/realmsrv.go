@@ -137,6 +137,73 @@ func (rm *RealmSrv) Make(ctx fs.CtxI, req proto.MakeRequest, res *proto.MakeResu
 	return nil
 }
 
+// XXX clean up if fail during Make
+func (rm *RealmSrv) MakeWithProvider(ctx fs.CtxI, req proto.MakeRequest, res *proto.MakeResult) error {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+
+	provider := sp.Tprovider(req.ProviderInt)
+	db.DPrintf(db.REALMD, "RealmSrv.MakeWithProvider %v %v %v\n", req.Realm, req.Network, provider)
+	rid := sp.Trealm(req.Realm)
+	// If realm already exists
+	if _, ok := rm.realms[rid]; ok {
+		return serr.NewErr(serr.TErrExists, rid)
+	}
+	if err := NewNet(req.Network); err != nil {
+		return err
+	}
+
+	p := proc.NewProc("named", []string{req.Realm, "0"})
+	p.SetMcpu(NAMED_MCPU)
+	p.SetProvider(provider)
+
+	if _, errs := rm.sc.SpawnBurst([]*proc.Proc{p}, 2); len(errs) != 0 {
+		db.DPrintf(db.REALMD_ERR, "Error SpawnBurst: %v", errs[0])
+		return errs[0]
+	}
+	if err := rm.sc.WaitStart(p.GetPid()); err != nil {
+		db.DPrintf(db.REALMD_ERR, "Error WaitStart: %v", err)
+		return err
+	}
+
+	// wait until realm's named is ready to serve
+	sem := semclnt.NewSemClnt(rm.sc.FsLib, path.Join(sp.REALMS, req.Realm)+".sem")
+	if err := sem.Down(); err != nil {
+		return err
+	}
+
+	db.DPrintf(db.REALMD, "RealmSrv.Make named for %v started\n", rid)
+
+	pcfg := proc.NewDifferentRealmProcEnv(rm.sc.ProcEnv(), rid)
+	sc, err := sigmaclnt.NewSigmaClntFsLib(pcfg)
+	if err != nil {
+		db.DPrintf(db.REALMD_ERR, "Error NewSigmaClntRealm: %v", err)
+		return err
+	}
+	// Make some rootrealm services available in new realm
+	namedMount := rm.sc.GetNamedMount()
+	for _, s := range []string{sp.LCSCHEDREL, sp.PROCQREL, sp.SCHEDDREL, sp.UXREL, sp.S3REL, sp.DBREL, sp.BOOTREL, sp.MONGOREL} {
+		pn := path.Join(sp.NAMED, s)
+		mnt := sp.Tmount{Addr: namedMount.Addr, Root: s}
+		db.DPrintf(db.REALMD, "Link %v at %s\n", mnt, pn)
+		if err := sc.MountService(pn, mnt, sp.NoLeaseId); err != nil {
+			db.DPrintf(db.REALMD, "MountService %v err %v\n", pn, err)
+			return err
+		}
+	}
+	// Make some realm dirs
+	for _, s := range []string{sp.KPIDSREL} {
+		pn := path.Join(sp.NAMED, s)
+		db.DPrintf(db.REALMD, "Mkdir %v", pn)
+		if err := sc.MkDir(pn, 0777); err != nil {
+			db.DPrintf(db.REALMD, "MountService %v err %v\n", pn, err)
+			return err
+		}
+	}
+	rm.realms[rid] = &Realm{named: p, sc: sc}
+	return nil
+}
+
 func (rm *RealmSrv) Remove(ctx fs.CtxI, req proto.RemoveRequest, res *proto.RemoveResult) error {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()

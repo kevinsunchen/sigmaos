@@ -34,6 +34,19 @@ func (rc *RealmClnt) NewRealm(realm sp.Trealm, net string) error {
 	return nil
 }
 
+func (rc *RealmClnt) NewRealmWithProvider(realm sp.Trealm, net string, provider sp.Tprovider) error {
+	req := &proto.MakeRequest{
+		Realm:       realm.String(),
+		Network:     net,
+		ProviderInt: uint32(provider),
+	}
+	res := &proto.MakeResult{}
+	if err := rc.rpcc.RPC("RealmSrv.MakeWithProvider", req, res); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (rc *RealmClnt) RemoveRealm(realm sp.Trealm) error {
 	req := &proto.RemoveRequest{
 		Realm: realm.String(),

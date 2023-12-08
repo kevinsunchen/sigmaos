@@ -19,6 +19,11 @@ func NewRealmTstate(ts *Tstate, realm sp.Trealm) *RealmTstate {
 	return newRealmTstateClnt(ts, realm, true)
 }
 
+// Creates a realm, and a tstate relative to that realm.
+func NewRealmTstateWithProvider(ts *Tstate, realm sp.Trealm, provider sp.Tprovider) *RealmTstate {
+	return newRealmTstateClntWithProvider(ts, realm, true, provider)
+}
+
 // News a tstate relative to an existing realm.
 func NewRealmTstateClnt(ts *Tstate, realm sp.Trealm) *RealmTstate {
 	return newRealmTstateClnt(ts, realm, false)
@@ -32,6 +37,32 @@ func newRealmTstateClnt(ts *Tstate, realm sp.Trealm, newrealm bool) *RealmTstate
 		}
 		db.DPrintf(db.TEST, "Make realm %v", realm)
 		if err := ts.rc.NewRealm(realm, net); err != nil {
+			db.DFatalf("Error NewRealmTstate NewRealm: %v", err)
+		}
+		db.DPrintf(db.TEST, "Done making realm %v", realm)
+	}
+	pcfg := proc.NewDifferentRealmProcEnv(ts.ProcEnv(), realm)
+	db.DPrintf(db.TEST, "ProcEnv for new realm %v", pcfg)
+	if sc, err := sigmaclnt.NewSigmaClntRootInit(pcfg); err != nil {
+		db.DFatalf("Error NewRealmTstate NewSigmaClnt: %v", err)
+	} else {
+		return &RealmTstate{
+			realm:     realm,
+			SigmaClnt: sc,
+			Ts:        ts,
+		}
+	}
+	return nil
+}
+
+func newRealmTstateClntWithProvider(ts *Tstate, realm sp.Trealm, newrealm bool, provider sp.Tprovider) *RealmTstate {
+	if newrealm {
+		net := ""
+		if Overlays {
+			net = realm.String()
+		}
+		db.DPrintf(db.TEST, "Make realm %v", realm)
+		if err := ts.rc.NewRealmWithProvider(realm, net, provider); err != nil {
 			db.DFatalf("Error NewRealmTstate NewRealm: %v", err)
 		}
 		db.DPrintf(db.TEST, "Done making realm %v", realm)

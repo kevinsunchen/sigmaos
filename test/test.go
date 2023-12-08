@@ -106,6 +106,19 @@ func NewTstateWithRealms(t *testing.T) *Tstate {
 	return ts
 }
 
+func NewTstateWithRealmsWithProvider(t *testing.T, provider sp.Tprovider) *Tstate {
+	ts, err := newSysClntWithProvider(t, BOOT_REALM, provider)
+	if err != nil {
+		db.DFatalf("NewTstateRealm: %v\n", err)
+	}
+	rc, err := realmclnt.NewRealmClnt(ts.FsLib)
+	if err != nil {
+		db.DFatalf("NewRealmClnt make realmclnt: %v\n", err)
+	}
+	ts.rc = rc
+	return ts
+}
+
 func newSysClntPath(t *testing.T, path string) (*Tstate, error) {
 	if path == sp.NAMED {
 		return newSysClnt(t, BOOT_NAMED)
