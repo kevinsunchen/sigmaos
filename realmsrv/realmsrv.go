@@ -167,8 +167,10 @@ func (rm *RealmSrv) MakeWithProvider(ctx fs.CtxI, req proto.MakeRequest, res *pr
 		return err
 	}
 
+	db.DPrintf(db.REALMD, "Named proc WaitStart completed, now waiting for semaphore")
 	// wait until realm's named is ready to serve
 	sem := semclnt.NewSemClnt(rm.sc.FsLib, path.Join(sp.REALMS, req.Realm)+".sem")
+	db.DPrintf(db.REALMD, "Semaphore client created with path %v", path.Join(sp.REALMS, req.Realm)+".sem")
 	if err := sem.Down(); err != nil {
 		return err
 	}
