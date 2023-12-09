@@ -1,0 +1,8 @@
+
+
+# starting/stopping sigmaos on aws cluster with:
+./start-sigmaos.sh --vpc vpc-08531d701dd868b70 --branch etcd-sigmasrv-newprocclnt-prvdr --pull kschen-sigmaos
+./stop-sigmaos.sh --vpc vpc-08531d701dd868b70
+
+# after starting sigmaos on aws, ssh into main ec2 cluster and run the following to test imgresizedmp:
+go test -v sigmaos/benchmarks --tag kschen-sigmaos --run TestImgResizeMultiProvider --n_imgresizemp_each 1 --imgresize_nround 1 --imgresizemp_providers_to_paths "name/s3/~local/kschen-9ps3/img/6.jpg:aws" --imgresize_mcpu 500 --imgresize_mem 0 --imgresizemp_init_provider "aws"
