@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1-experimental
 
-FROM alpine:3.18.5 AS base
+FROM alpine AS base
 
 # Install some apt packages for debugging.
 #RUN \
@@ -13,7 +13,7 @@ FROM alpine:3.18.5 AS base
 #  apt autoremove && \
 #  rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-RUN apk add --no-cache libseccomp gcompat libpthread-stubs musl-dev strace
+RUN apk add --no-cache libseccomp gcompat musl-dev strace
 
 WORKDIR /home/sigmaos
 RUN mkdir bin && \
