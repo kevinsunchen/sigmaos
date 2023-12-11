@@ -1,10 +1,9 @@
 # syntax=docker/dockerfile:1-experimental
 
-FROM alpine:3.18.5
+FROM alpine
 
 RUN apk add --no-cache libseccomp \
   gcompat \
-  libpthread-stubs \
   musl-dev \
   curl \
   bash \
