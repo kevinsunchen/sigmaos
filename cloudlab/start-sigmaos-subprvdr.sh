@@ -83,18 +83,19 @@ source $DIR/env.sh
 
 vms=`cat servers.txt | cut -d " " -f2`
 
-aws_vms_full=$(../aws/lsvpc.py  --privaddr $VPC)
-aws_vms=`echo "$aws_vms_full" | grep -w VMInstance | cut -d " " -f 5`
+aws_vms_full=$(../aws/lsvpc-alt.py  --privaddr $VPC)
+aws_vms=`echo "$aws_vms_full" | grep -w VMInstance | cut -d " " -f 7`
 
 vma=($vms)
 aws_vma=($aws_vms)
 
 MAIN="${vma[0]}"
 MAIN_PRIVADDR=$(./leader-ip.sh)
+MAIN_PUBADDR="${aws_vma[0]}"
 SIGMASTART=$MAIN
 # SIGMASTART_PRIVADDR=$MAIN_PRIVADDR
-SIGMASTART_PRIVADDR="${aws_vma[0]}"
-echo "SIGMASTART_PRIVADDR $SIGMASTART_PRIVADDR"
+SIGMASTART_PUBADDR=$MAIN_PUBADDR
+echo "SIGMASTART_PUBADDR $SIGMASTART_PUBADDR"
 IMGS="arielszekely/sigmauser arielszekely/sigmaos arielszekely/sigmaosbase"
 
 if ! [ -z "$N_VM" ]; then
@@ -142,10 +143,10 @@ for vm in $vms; do
     fi
   fi
 
-  aws s3 --profile sigmaos cp s3://9ps3/img-save/1.jpg ~/
-  aws s3 --profile sigmaos cp s3://9ps3/img-save/6.jpg ~/
-  aws s3 --profile sigmaos cp s3://9ps3/img-save/7.jpg ~/
-  aws s3 --profile sigmaos cp s3://9ps3/img-save/8.jpg ~/
+  aws s3 --profile sigmaos cp s3://kschen-9ps3/img-src/1.jpg ~/
+  aws s3 --profile sigmaos cp s3://kschen-9ps3/img-src/6.jpg ~/
+  aws s3 --profile sigmaos cp s3://kschen-9ps3/img-src/7.jpg ~/
+  # aws s3 --profile sigmaos cp s3://kschen-9ps3/img-src/8.jpg ~/
 
   cd sigmaos
 
@@ -156,24 +157,24 @@ for vm in $vms; do
     ./make.sh --norace linux
     echo "START NETWORK $MAIN_PRIVADDR"
     ./start-network.sh --addr $MAIN_PRIVADDR
-    echo "START ${SIGMASTART} ${SIGMASTART_PRIVADDR} ${KERNELID}"
-    if ! docker ps | grep -q etcd ; then
-      echo "START etcd"
-      ./start-etcd.sh
-    fi
-    ./start-kernel.sh --boot lcschednode --named ${SIGMASTART_PRIVADDR} --pull ${TAG} --reserveMcpu ${RMCPU} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 ${OVERLAYS} --provider ${PROVIDER} ${KERNELID} 2>&1 | tee /tmp/start.out
+    echo "START ${SIGMASTART} ${SIGMASTART_PUBADDR} ${KERNELID}"
+    # if ! docker ps | grep -q etcd ; then
+    #   # echo "START etcd"
+    #   # ./start-etcd.sh
+    # fi
+    ./start-kernel.sh --boot lcschednode --named ${SIGMASTART_PUBADDR} --pull ${TAG} --reserveMcpu ${RMCPU} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 ${OVERLAYS} --provider ${PROVIDER} ${KERNELID} 2>&1 | tee /tmp/start.out
     docker cp ~/1.jpg ${KERNELID}:/home/sigmaos/1.jpg
     docker cp ~/6.jpg ${KERNELID}:/home/sigmaos/6.jpg
     docker cp ~/7.jpg ${KERNELID}:/home/sigmaos/7.jpg
-    docker cp ~/8.jpg ${KERNELID}:/home/sigmaos/8.jpg
+    # docker cp ~/8.jpg ${KERNELID}:/home/sigmaos/8.jpg
   else
     echo "JOIN ${SIGMASTART} ${KERNELID}"
     ${TOKEN} 2>&1 > /dev/null
-    ./start-kernel.sh --boot node --named ${SIGMASTART_PRIVADDR} --pull ${TAG} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 ${OVERLAYS} --provider ${PROVIDER} ${KERNELID} 2>&1 | tee /tmp/join.out
+    ./start-kernel.sh --boot node --named ${SIGMASTART_PUBADDR} --pull ${TAG} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 ${OVERLAYS} --provider ${PROVIDER} ${KERNELID} 2>&1 | tee /tmp/join.out
     docker cp ~/1.jpg ${KERNELID}:/home/sigmaos/1.jpg
     docker cp ~/6.jpg ${KERNELID}:/home/sigmaos/6.jpg
     docker cp ~/7.jpg ${KERNELID}:/home/sigmaos/7.jpg
-    docker cp ~/8.jpg ${KERNELID}:/home/sigmaos/8.jpg
+    # docker cp ~/8.jpg ${KERNELID}:/home/sigmaos/8.jpg
   fi
 ENDSSH
   if [ "${vm}" = "${MAIN}" ]; then

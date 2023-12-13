@@ -80,7 +80,7 @@ func NTaskDone(fsl *fslib.FsLib, job string) (int, error) {
 	sts, _ := fsl.GetDir(path.Join(sp.IMG, job, "done"))
 	ststodo, _ := fsl.GetDir(path.Join(sp.IMG, job, "todo"))
 	stswip, err := fsl.GetDir(path.Join(sp.IMG, job, "wip"))
-	db.DPrintf(db.TEST, "Todo: %v; Wip: %v; Done: %v", ststodo, stswip, sts)
+	db.DPrintf(db.TEST, "\nTodo: %v;\nWip: %v;\nDone: %v", ststodo, stswip, sts)
 	if err != nil {
 		return -1, err
 	}

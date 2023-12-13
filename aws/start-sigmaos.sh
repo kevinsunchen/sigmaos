@@ -78,19 +78,21 @@ if [ $NCORES -ne 4 ] && [ $NCORES -ne 2 ]; then
   exit 1
 fi
 
-vms_full=$(./lsvpc.py  --privaddr $VPC)
+vms_full=$(./lsvpc-alt.py  --privaddr $VPC)
 vms=`echo "$vms_full" | grep -w VMInstance | cut -d " " -f 5`
 vms_privaddr=`echo "$vms_full" | grep -w VMInstance | cut -d " " -f 6`
+vms_pubaddr=`echo "$vms_full" | grep -w VMInstance | cut -d " " -f 7`
 
 vma=($vms)
 vma_privaddr=($vms_privaddr)
+vma_pubaddr=($vms_pubaddr)
 MAIN="${vma[0]}"
 # MAIN_PRIVADDR="${vma_privaddr[0]}"
-# MAIN_PRIVADDR="ec2-54-235-228-4.compute-1.amazonaws.com"
 MAIN_PRIVADDR="${vma[0]}"
-echo $MAIN_PRIVADDR
+MAIN_PUBADDR="${vma_pubaddr[0]}"
+echo $MAIN_PRIVADDR $MAIN_PUBADDR
 SIGMASTART=$MAIN
-SIGMASTART_PRIVADDR=$MAIN_PRIVADDR
+SIGMASTART_PUBADDR=$MAIN_PUBADDR
 IMGS="arielszekely/sigmauser arielszekely/sigmaos arielszekely/sigmaosbase"
 
 if ! [ -z "$N_VM" ]; then
@@ -138,12 +140,12 @@ for vm in $vms; do
     ./make.sh --norace linux
     echo "START NETWORK $MAIN_PRIVADDR"
     ./start-network.sh --addr $MAIN_PRIVADDR
-    echo "START ${SIGMASTART} ${SIGMASTART_PRIVADDR} ${KERNELID}"
+    echo "START ${SIGMASTART} ${SIGMASTART_PUBADDR} ${KERNELID}"
     if ! docker ps | grep -q etcd ; then
       echo "START etcd"
       ./start-etcd.sh
     fi
-    ./start-kernel.sh --boot realm --named ${SIGMASTART_PRIVADDR} --pull ${TAG} --reserveMcpu ${RMCPU} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 ${OVERLAYS} --provider ${PROVIDER} ${KERNELID} 2>&1 | tee /tmp/start.out
+    ./start-kernel.sh --boot realm --named ${SIGMASTART_PUBADDR} --pull ${TAG} --reserveMcpu ${RMCPU} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 ${OVERLAYS} --provider ${PROVIDER} ${KERNELID} 2>&1 | tee /tmp/start.out
     docker cp ~/1.jpg ${KERNELID}:/home/sigmaos/1.jpg
     docker cp ~/6.jpg ${KERNELID}:/home/sigmaos/6.jpg
     docker cp ~/7.jpg ${KERNELID}:/home/sigmaos/7.jpg
@@ -151,7 +153,7 @@ for vm in $vms; do
   else
     echo "JOIN ${SIGMASTART} ${KERNELID}"
     ${TOKEN} 2>&1 > /dev/null
-    ./start-kernel.sh --boot node --named ${SIGMASTART_PRIVADDR} --pull ${TAG} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 ${OVERLAYS} --provider ${PROVIDER} ${KERNELID} 2>&1 | tee /tmp/join.out
+    ./start-kernel.sh --boot node --named ${SIGMASTART_PUBADDR} --pull ${TAG} --dbip ${MAIN_PRIVADDR}:4406 --mongoip ${MAIN_PRIVADDR}:4407 ${OVERLAYS} --provider ${PROVIDER} ${KERNELID} 2>&1 | tee /tmp/join.out
     docker cp ~/1.jpg ${KERNELID}:/home/sigmaos/1.jpg
     docker cp ~/6.jpg ${KERNELID}:/home/sigmaos/6.jpg
     docker cp ~/7.jpg ${KERNELID}:/home/sigmaos/7.jpg
