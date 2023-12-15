@@ -29,6 +29,11 @@ func NewRealmTstateClnt(ts *Tstate, realm sp.Trealm) *RealmTstate {
 	return newRealmTstateClnt(ts, realm, false)
 }
 
+// News a tstate relative to an existing realm.
+func NewRealmTstateClntWithProvider(ts *Tstate, realm sp.Trealm, provider sp.Tprovider) *RealmTstate {
+	return newRealmTstateClntWithProvider(ts, realm, false, provider)
+}
+
 func newRealmTstateClnt(ts *Tstate, realm sp.Trealm, newrealm bool) *RealmTstate {
 	if newrealm {
 		net := ""
