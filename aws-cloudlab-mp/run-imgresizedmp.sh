@@ -49,24 +49,35 @@ OUT_DIR=$MP_DIR/outfile.txt
 cd $AWS_DIR
 LEADER_PUBLIC_IP=$(./leader-public-ip.sh --vpc $VPC)
 
-./start-sigmaos.sh --vpc vpc-08531d701dd868b70 --branch etcd-sigmasrv-newprocclnt-prvdr --pull kschen-sigmaos
+# rm $OUT_DIR > /dev/null
+echo "" > $OUT_DIR
+
+echo "Starting aws"
+echo "============ START CLUSTER: AWS ============" >> $OUT_DIR
+./start-sigmaos.sh --vpc vpc-08531d701dd868b70 --branch etcd-sigmasrv-newprocclnt-prvdr --pull kschen-sigmaos >> $OUT_DIR
 
 cd $CLOUDLAB_DIR
-./start-sigmaos-subprvdr.sh --vpc vpc-08531d701dd868b70 --branch etcd-sigmasrv-newprocclnt-prvdr --pull kschen-sigmaos
+echo "Starting cloudlab"
+echo "============ START CLUSTER: CLOUDLAB ============" >> $OUT_DIR
+./start-sigmaos-subprvdr.sh --vpc vpc-08531d701dd868b70 --branch etcd-sigmasrv-newprocclnt-prvdr --pull kschen-sigmaos >> $OUT_DIR
 
 cd $AWS_DIR
 ssh -i key-$VPC.pem ubuntu@$LEADER_PUBLIC_IP <<ENDSSH
   cd sigmaos
   export SIGMADEBUG="BENCH;IMGD;"
   go clean -testcache
-  go test -v sigmaos/benchmarks --tag kschen-sigmaos --run TestImgResizeMultiProvider --n_imgresizemp_each 10 --imgresize_nround 25 --imgresizemp_providers_to_paths "name/s3/~local/kschen-9ps3/img/1.jpg:cloudlab;name/s3/~local/kschen-9ps3/img/6.jpg:aws;name/s3/~local/kschen-9ps3/img/7.jpg:aws" --imgresize_mcpu 500 --imgresize_mem 0 --imgresizemp_init_provider aws
+  go test -v sigmaos/benchmarks --etcdIP $LEADER_PUBLIC_IP --tag kschen-sigmaos --run TestImgResizeMultiProvider --n_imgresizemp_each 10 --imgresize_nround 25 --imgresizemp_providers_to_paths "name/s3/~local/kschen-9ps3/img/1.jpg:cloudlab;name/s3/~local/kschen-9ps3/img/6.jpg:aws;name/s3/~local/kschen-9ps3/img/7.jpg:aws" --imgresize_mcpu 500 --imgresize_mem 0 --imgresizemp_init_provider aws
 ENDSSH
 
 cd $CLOUDLAB_DIR
-./stop-sigmaos.sh
+echo "Stopping cloudlab"
+echo "============ STOP CLUSTER: CLOUDLAB ============" >> $OUT_DIR
+./stop-sigmaos.sh >> $OUT_DIR
 
 cd $AWS_DIR
-./stop-sigmaos.sh --vpc vpc-08531d701dd868b70
+echo "Stopping aws"
+echo "============ STOP CLUSTER: AWS ============" >> $OUT_DIR
+./stop-sigmaos.sh --vpc vpc-08531d701dd868b70 >> $OUT_DIR
 
 
 # cd $MP_DIR
